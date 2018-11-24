@@ -1,7 +1,7 @@
 module Main where
 
 import Host
-import Lib
+import SFTP
 
 main :: IO ()
 main = withSFTP (remoteUser ++ "@" ++ remoteHost) (`listDirectory` remoteDir) >>= print

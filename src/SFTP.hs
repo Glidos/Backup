@@ -1,4 +1,4 @@
-module Lib
+module SFTP
     ( withSFTP,
     listDirectory
     ) where
