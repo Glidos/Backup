@@ -1,6 +1,9 @@
 module SFTP
     ( withSFTP,
-    listDirectory
+    listDirectory,
+    upload,
+    download,
+    deleteFile
     ) where
 
 import System.IO
@@ -37,6 +40,27 @@ listDirectory (SFTP p) path = do
             return $ Just $ map init $ lines lsout -- output is a line per item with an extra CR char on the end of each
         else return Nothing
 
+upload :: SFTP -> String -> String -> IO Bool
+upload (SFTP p) lpath rpath = do
+    hPutStrLn (getStdin p) $ "put " ++ lpath ++ " " ++ rpath
+    hFlush (getStdin p)
+    out <- hGetUptoMark (getStdout p) "\nsftp>"
+    return $ "100%" `isInfixOf` out -- command reports progress, getting to 100% on success
+
+
+download :: SFTP -> String -> String -> IO Bool
+download (SFTP p) rpath lpath = do
+    hPutStrLn (getStdin p) $ "get " ++ rpath ++ " " ++ lpath
+    hFlush (getStdin p)
+    out <- hGetUptoMark (getStdout p) "\nsftp>"
+    return $ "100%" `isInfixOf` out -- command reports progress, geting to 100% on success
+
+deleteFile :: SFTP -> String -> IO Bool
+deleteFile (SFTP p) path = do
+    hPutStrLn (getStdin p) $ "rm " ++ path
+    hFlush (getStdin p)
+    out <- hGetUptoMark (getStdout p) "\nsftp>"
+    return $ length (lines out) <= 2 -- More than 2 lines implies an error message
 
 -- Read characters from a handle until a marking string is found
 -- and return what has been read upto that mark.
