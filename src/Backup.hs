@@ -3,18 +3,16 @@ module Backup
         Period(..),
         display,
         path,
-        outerPath,
         today,
         copyForPeriod,
         copyForLevel,
         diffFromTo
     ) where
 
-import           Data.Time.Calendar
-import           Data.Time.Clock
-import           Data.Time.Format
-
-baseDir = "/home/backup"
+import Data.Time.Calendar
+import Data.Time.Clock
+import Data.Time.Format
+import BackupDir
 
 data Period = Daily | Weekly | Monthly | Yearly
 
@@ -22,26 +20,16 @@ data Periodic = Periodic Period Day
 data Incremental = Incremental Integer Day
 data Diff = Diff Day Day
 
-class Backup a where
-    display :: a -> String
-    subDir :: a -> Maybe String -- Some backup copies are placed in subdirectories
-    path :: a -> String -- Where the backup is kept
-    outerPath :: a -> String -- What to delete to remove the backup
-    outerPath bk = baseDir ++ "/" ++ case subDir bk of Nothing -> display bk
-                                                       Just dir -> dir
-    path bk = case subDir bk of Nothing -> outerPath bk
-                                Just _ -> outerPath bk ++ "/" ++ display bk
-
-instance Backup Periodic where
+instance BackupDir Periodic where
     display (Periodic _ day) = show day
     subDir (Periodic period day) = case period of Daily -> Nothing
                                                   _ -> Just $ format period day
 
-instance Backup Incremental where
+instance BackupDir Incremental where
     display (Incremental _ day) = show day
     subDir (Incremental level _) = Just $ "Level" ++ show level
 
-instance Backup Diff where
+instance BackupDir Diff where
     display (Diff from to) = show from ++ "to" ++ show to
     subDir _ = Nothing
     outerPath bk = baseDir ++ "/Diffs/" ++ display bk
