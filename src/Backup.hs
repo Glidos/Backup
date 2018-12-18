@@ -1,13 +1,13 @@
 module Backup
-    (
-        Period(..),
-        display,
-        path,
-        today,
-        copyForPeriod,
-        copyForLevel,
-        diffFromTo
-    ) where
+( Period(..)
+, display
+, path
+, outerPath
+, today
+, copyForPeriod
+, copyForLevel
+, diffFromTo
+) where
 
 import Data.Time.Calendar
 import Data.Time.Clock
@@ -22,17 +22,19 @@ data Diff = Diff Day Day
 
 instance BackupDir Periodic where
     display (Periodic _ day) = show day
-    subDir (Periodic period day) = case period of Daily -> Nothing
-                                                  _ -> Just $ format period day
+    subDir _ = Nothing
+    wrapperDir (Periodic period day) = case period of Daily -> Nothing
+                                                      _ -> Just $ format period day
 
 instance BackupDir Incremental where
     display (Incremental _ day) = show day
-    subDir (Incremental level _) = Just $ "Level" ++ show level
+    subDir _ = Nothing
+    wrapperDir (Incremental level _) = Just $ "Level" ++ show level
 
 instance BackupDir Diff where
     display (Diff from to) = show from ++ "to" ++ show to
-    subDir _ = Nothing
-    outerPath bk = baseDir ++ "/Diffs/" ++ display bk
+    subDir _ = Just "Diffs"
+    wrapperDir _ = Nothing
  
 formatString :: Period -> String
 formatString Daily = "%Y-%m-%d"

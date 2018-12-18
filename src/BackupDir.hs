@@ -2,21 +2,25 @@ module BackupDir
 ( BackupDir
 , display
 , subDir
-, outerPath
+, wrapperDir
 , path
-, baseDir
+, outerPath
 ) where
+
+import Data.List
+import Data.Maybe
+import System.FilePath.Posix
 
 baseDir = "/home/backup"
 
+-- Attributes to do with keeping backup information on disc in directories
 
 class BackupDir a where
     display :: a -> String
-    subDir :: a -> Maybe String -- Some backup copies are placed in subdirectories
+    subDir :: a -> Maybe String -- Some backups are grouped in subdirectories (e.g. Diffs)
+    wrapperDir :: a -> Maybe String -- Some backups are stored in wrapper directories (e.g. monthly copies in YYYYMM)
     path :: a -> String -- Where the backup is kept
-    outerPath :: a -> String -- What to delete to remove the backup
-    outerPath bk = baseDir ++ "/" ++ case subDir bk of Nothing -> display bk
-                                                       Just dir -> dir
-    path bk = case subDir bk of Nothing -> outerPath bk
-                                Just _ -> outerPath bk ++ "/" ++ display bk
+    outerPath :: a -> String -- What to delete to remove the backup (the wrapper if there is one, otherwise same as path)
+    path bk = foldr1 (</>) $ [baseDir] ++ maybeToList (subDir bk) ++ maybeToList (wrapperDir bk) ++ [display bk]
+    outerPath bk = foldr1 (</>) $ [baseDir] ++ maybeToList (subDir bk) ++ [fromMaybe (display bk) (wrapperDir bk)]
 
