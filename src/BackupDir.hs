@@ -1,5 +1,6 @@
 module BackupDir
 ( BackupDir
+, baseDir
 , display
 , subDir
 , wrapperDir

@@ -9,11 +9,8 @@ bothPaths = path &&& outerPath
 
 main :: IO ()
 main = do
-    bothPaths <$> today >>= print
-    bothPaths . copyForPeriod Weekly <$> today >>= print
-    bothPaths . copyForPeriod Monthly <$> today >>= print
-    bothPaths . copyForPeriod Yearly <$> today >>= print
-    bothPaths . copyForLevel 1 <$> today >>= print
-    from <- copyForLevel 1 <$> today
-    to <- copyForLevel 2 <$> today
-    print $ bothPaths $ diffFromTo from to
+    print . map path =<< backupsForPeriod Daily
+    print . map path =<< backupsForPeriod Weekly
+    print . map path =<< backupsForPeriod Monthly
+    print . map path =<< backupsForPeriod Yearly
+    print . map (fmap path) =<< traverse backupForLevel [1..4]
