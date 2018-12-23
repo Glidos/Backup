@@ -6,11 +6,13 @@ module BackupDir
 , wrapperDir
 , path
 , outerPath
+, remove
 ) where
 
 import Data.List
 import Data.Maybe
 import System.FilePath.Posix
+import System.Directory
 
 baseDir = "/home/backup"
 
@@ -24,4 +26,8 @@ class BackupDir a where
     outerPath :: a -> String -- What to delete to remove the backup (the wrapper if there is one, otherwise same as path)
     path bk = foldr1 (</>) $ [baseDir] ++ maybeToList (subDir bk) ++ maybeToList (wrapperDir bk) ++ [display bk]
     outerPath bk = foldr1 (</>) $ [baseDir] ++ maybeToList (subDir bk) ++ [fromMaybe (display bk) (wrapperDir bk)]
+
+
+    remove :: a -> IO ()
+    remove bk = removeDirectoryRecursive $ outerPath bk
 

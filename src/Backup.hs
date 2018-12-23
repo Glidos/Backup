@@ -1,10 +1,16 @@
 module Backup
 ( Frequency(..)
+, Periodic(..)
+, Incremental(..)
+, Backup(..)
 , display
-, path
-, outerPath
 , backupsForPeriod
 , backupForLevel
+, createTodayBasedOn
+, createPeriodicCopy
+, createIncrementalCopy
+, periodIsRepresented
+, remove
 ) where
 
 import Data.Time.Calendar
@@ -15,11 +21,12 @@ import Data.Bool
 import BackupDir
 import System.Directory
 import System.FilePath.Posix
+import System.Process.Typed
 import Control.Monad
 
-data Frequency = Daily | Weekly | Monthly | Yearly deriving Eq
+data Frequency = Daily | Weekly | Monthly | Yearly deriving (Eq, Ord)
 
-data Periodic = Periodic Frequency Day
+data Periodic = Periodic Frequency Day deriving (Eq, Ord)
 data Incremental = Incremental Integer Day
 data Diff = Diff Day Day
 
@@ -42,6 +49,16 @@ instance BackupDir Diff where
     display (Diff from to) = show from ++ "to" ++ show to
     subDir _ = Just "Diffs"
     wrapperDir _ = Nothing
+
+
+class BackupDir b => Backup b where
+    day :: b -> Day
+
+instance Backup Periodic where
+    day (Periodic _ d) = d
+
+instance Backup Incremental where
+    day (Incremental _ d) = d
 
 
 dayFormatString :: Frequency -> String
@@ -89,17 +106,36 @@ partialM p x = bool Nothing (Just x) <$> p x
 backupForLevel :: Integer -> IO (Maybe Incremental)
 backupForLevel level = traverse ((Incremental level <$>) . dayForPath True) =<< partialM doesDirectoryExist (baseDir </> formatLevel level)
 
+backupTarget = "/"
+
 -- Create a backup for today based on an exisiting backup
 -- Unchanged files will share disc space with the existing backup
--- createTodayBasedOn :: Periodic -> IO Periodic
+createTodayBasedOn :: Backup b => b -> IO Periodic
+createTodayBasedOn previous = do backup <- Periodic Daily . utctDay <$> getCurrentTime
+                                 runProcess_ $ shell $ "rsync -ra --files-from=rsync-list --exclude-from=backup-exclude --link-dest=" ++ path previous ++ " " ++ backupTarget ++ " " ++ path backup
+                                 return backup
+
+-- Create a copy of a backup, sharing disc space
+createCopy :: (Backup b, Backup c) => b -> c -> IO ()
+createCopy base backup = createDirectoryIfMissing False (outerPath backup)
+                         >> runProcess_ (shell $ "cp -al " ++ path base ++ " " ++ path backup)
+
 
 -- For a given frequency, create a periodic copy of an existing backup,
 -- sharing disc space
--- copyForPeriod :: Frequency -> Periodic -> IO Periodic
+createPeriodicCopy :: Backup b => Frequency -> b -> IO Periodic
+createPeriodicCopy freq base = ((>>) <$> createCopy base <*> return) $ Periodic freq $ day base
 
 -- For a given level, create an incremental copy of an existing backup,
 -- sharing disc space
--- copyForLevel :: Integer -> Periodic -> IO Incremental
+createIncrementalCopy :: Backup b => Integer -> b -> IO Incremental
+createIncrementalCopy level base = ((>>) <$> createCopy base <*> return) $ Incremental level $ day base
+
+-- For an existing backup and a frequency, test whether there is a corresponding
+-- periodic copy. We don't expect a copy for the specific day; we just wish to
+-- know if the period is represented, so we check the outer path.
+periodIsRepresented :: Backup b => Frequency -> b -> IO Bool
+periodIsRepresented freq base = doesDirectoryExist $ outerPath $ Periodic freq $ day base
 
 -- On the basis of two backups, pull out just the files that are in the
 -- second but not the first or that have changed
