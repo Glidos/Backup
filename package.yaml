@@ -13,6 +13,11 @@ tests:
 copyright: Copyright (c) Paul Gardiner
 maintainer: haskell@glidos.net
 dependencies:
+- bytestring
+- http-conduit
+- http-client
+- regex-posix
+- regex-compat
 - cond
 - filepath
 - directory

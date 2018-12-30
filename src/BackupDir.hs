@@ -7,12 +7,19 @@ module BackupDir
 , path
 , outerPath
 , remove
+, remoteItems
+, remoteOkay
 ) where
 
 import Data.List
+import qualified Data.ByteString.Char8 as C
 import Data.Maybe
 import System.FilePath.Posix
 import System.Directory
+import Host
+import qualified SFTP
+import Text.Regex
+import Network.HTTP.Simple
 
 baseDir = "/home/backup"
 
@@ -27,7 +34,22 @@ class BackupDir a where
     path bk = foldr1 (</>) $ [baseDir] ++ maybeToList (subDir bk) ++ maybeToList (wrapperDir bk) ++ [display bk]
     outerPath bk = foldr1 (</>) $ [baseDir] ++ maybeToList (subDir bk) ++ [fromMaybe (display bk) (wrapperDir bk)]
 
+    archiveName :: a -> String
+    archiveName bk = display bk ++ ".tar.gpg"
 
     remove :: a -> IO ()
     remove bk = removeDirectoryRecursive $ outerPath bk
+
+    remoteHash :: a -> IO C.ByteString
+    remoteHash bk = head . C.words . getResponseBody <$> (httpBS =<< parseRequest ("http://" ++ httpHost ++ "/md5sum.php?file=" ++ httpDir </> archiveName bk))
+
+    storedHash :: a -> IO C.ByteString
+    storedHash bk = C.readFile $ baseDir </> "checksums" </> archiveName bk
+
+    remoteOkay :: a -> IO Bool
+    remoteOkay bk = (==) <$> remoteHash bk <*> storedHash bk
+
+remoteItems :: IO [String]
+remoteItems = SFTP.withSFTP (remoteUser ++ "@" ++ remoteHost) $ \sftp ->
+    mapMaybe (fmap head . matchRegex (mkRegex "^(.*)\\.tar\\.gpg$")) <$> SFTP.listDirectory sftp remoteDir
 

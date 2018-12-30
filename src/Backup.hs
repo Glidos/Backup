@@ -2,6 +2,7 @@ module Backup
 ( Frequency(..)
 , Periodic(..)
 , Incremental(..)
+, Diff(..)
 , Backup(..)
 , display
 , backupsForPeriod
@@ -11,6 +12,7 @@ module Backup
 , createIncrementalCopy
 , periodIsRepresented
 , remove
+, remoteDiffs
 ) where
 
 import Data.Time.Calendar
@@ -23,6 +25,7 @@ import System.Directory
 import System.FilePath.Posix
 import System.Process.Typed
 import Control.Monad
+import Text.Regex
 
 data Frequency = Daily | Weekly | Monthly | Yearly deriving (Eq, Ord)
 
@@ -136,6 +139,14 @@ createIncrementalCopy level base = ((>>) <$> createCopy base <*> return) $ Incre
 -- know if the period is represented, so we check the outer path.
 periodIsRepresented :: Backup b => Frequency -> b -> IO Bool
 periodIsRepresented freq base = doesDirectoryExist $ outerPath $ Periodic freq $ day base
+
+parseDiff :: String -> Maybe Diff
+parseDiff = fmap (\[a,b] -> Diff a b) . traverse (parseDay Daily) <=< matchRegex (mkRegex "^(.*)to(.*)$")
+
+-- List the remotely stored diffs
+remoteDiffs :: IO [Diff]
+remoteDiffs = mapMaybe parseDiff <$> remoteItems
+
 
 -- On the basis of two backups, pull out just the files that are in the
 -- second but not the first or that have changed
