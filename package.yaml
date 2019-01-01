@@ -13,6 +13,10 @@ tests:
 copyright: Copyright (c) Paul Gardiner
 maintainer: haskell@glidos.net
 dependencies:
+- unix-time
+- convertible
+- unix
+- directory-tree
 - bytestring
 - http-conduit
 - http-client

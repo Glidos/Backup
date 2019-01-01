@@ -11,6 +11,7 @@ module Backup
 , createPeriodicCopy
 , createIncrementalCopy
 , periodIsRepresented
+, diffBetween
 , remove
 , remoteDiffs
 ) where
@@ -150,4 +151,8 @@ remoteDiffs = mapMaybe parseDiff <$> remoteItems
 
 -- On the basis of two backups, pull out just the files that are in the
 -- second but not the first or that have changed
--- diffBetween ::  Incremental -> Incremental -> IO Diff
+diffBetween ::  (Backup b, Backup c) => b -> c -> IO Diff
+diffBetween from to = let diff = Diff (day from) (day to)
+                      in createDirectoryIfMissing False (takeDirectory $ path diff)
+                         >> runProcess_ (shell $ "rsync -ra --exclude-from=upload-exclude --compare-dest=" ++ path from ++ " " ++ path to ++ " " ++ path diff)
+                         >> return diff

@@ -7,15 +7,21 @@ module BackupDir
 , path
 , outerPath
 , remove
+, removeArchive
+, compress
+, makeHash
+, upload
 , remoteItems
 , remoteOkay
 ) where
 
 import Data.List
 import qualified Data.ByteString.Char8 as C
+import qualified Data.ByteString.Lazy.Char8 as LC
 import Data.Maybe
 import System.FilePath.Posix
 import System.Directory
+import System.Process.Typed
 import Host
 import qualified SFTP
 import Text.Regex
@@ -37,17 +43,38 @@ class BackupDir a where
     archiveName :: a -> String
     archiveName bk = display bk ++ ".tar.gpg"
 
+    archivePath :: a -> String
+    archivePath bk = baseDir </> "Archives" </> archiveName bk
+
+    checksumPath :: a -> String
+    checksumPath bk = baseDir </> "checksums" </> archiveName bk
+
     remove :: a -> IO ()
     remove bk = removeDirectoryRecursive $ outerPath bk
+
+    removeArchive :: a -> IO ()
+    removeArchive bk = removeFile $ archivePath bk
 
     remoteHash :: a -> IO C.ByteString
     remoteHash bk = head . C.words . getResponseBody <$> (httpBS =<< parseRequest ("http://" ++ httpHost ++ "/md5sum.php?file=" ++ httpDir </> archiveName bk))
 
     storedHash :: a -> IO C.ByteString
-    storedHash bk = C.readFile $ baseDir </> "checksums" </> archiveName bk
+    storedHash bk = C.readFile $ checksumPath bk
 
     remoteOkay :: a -> IO Bool
     remoteOkay bk = (==) <$> remoteHash bk <*> storedHash bk
+
+    compress :: a -> IO String
+    compress bk = createDirectoryIfMissing False (takeDirectory $ archivePath bk)
+                  >> runProcess_ (shell $ "cd " ++ takeDirectory (path bk) ++ "; tar -c " ++ display bk ++ " | gpg --batch -c --compress-algo bzip2 --passphrase-file ~/passphrase - > " ++ archivePath bk)
+                  >> return (archivePath bk)
+
+    makeHash :: a -> IO ()
+    makeHash bk = createDirectoryIfMissing False (takeDirectory $ checksumPath bk)
+                  >> (writeFile (checksumPath bk) . head . words . LC.unpack . fst =<< readProcess_ (shell $ "md5sum " ++ archivePath bk))
+
+    upload :: a -> IO ()
+    upload bk = SFTP.withSFTP (remoteUser ++ "@" ++ remoteHost) $ \sftp -> SFTP.upload sftp (archivePath bk) (remoteDir </> archiveName bk)
 
 remoteItems :: IO [String]
 remoteItems = SFTP.withSFTP (remoteUser ++ "@" ++ remoteHost) $ \sftp ->
