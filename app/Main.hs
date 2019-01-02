@@ -40,7 +40,7 @@ createTodaysBackup = do
     let mostRecent = maximum previous
     today <- utctDay <$> getCurrentTime
     when (day mostRecent == today) $ fail "backup for today already created"
-    createTodayBasedOn mostRecent
+    createBackupForDayBasedOn today mostRecent
 
 
 ensurePeriodicCopiesOf :: Backup b => b -> IO ()

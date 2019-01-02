@@ -7,7 +7,7 @@ module Backup
 , display
 , backupsForPeriod
 , backupForLevel
-, createTodayBasedOn
+, createBackupForDayBasedOn
 , createPeriodicCopy
 , createIncrementalCopy
 , periodIsRepresented
@@ -114,10 +114,10 @@ backupTarget = "/"
 
 -- Create a backup for today based on an exisiting backup
 -- Unchanged files will share disc space with the existing backup
-createTodayBasedOn :: Backup b => b -> IO Periodic
-createTodayBasedOn previous = do backup <- Periodic Daily . utctDay <$> getCurrentTime
-                                 runProcess_ $ shell $ "rsync -ra --files-from=rsync-list --exclude-from=backup-exclude --link-dest=" ++ path previous ++ " " ++ backupTarget ++ " " ++ path backup
-                                 return backup
+createBackupForDayBasedOn :: Backup b => Day -> b -> IO Periodic
+createBackupForDayBasedOn day previous = let backup = Periodic Daily day
+                                         in runProcess_ (shell $ "rsync -ra --files-from=rsync-list --exclude-from=backup-exclude --link-dest=" ++ path previous ++ " " ++ backupTarget ++ " " ++ path backup)
+                                            >> return backup
 
 -- Create a copy of a backup, sharing disc space
 createCopy :: (Backup b, Backup c) => b -> c -> IO ()
