@@ -77,7 +77,7 @@ addLifetimeForLevel 4 = addDays 1
 levelToUpdate :: Day -> IO Integer
 levelToUpdate today = do
     level1 <- backupForLevel 1 >>= maybe (fail "Level 1 backup missing") return
-    days <- constructable (day level1) <$> (filterM remoteOkay =<< remoteDiffs)
+    days <- daysConstructableFrom (day level1) <$> (filterM remoteOkay =<< remoteDiffs)
     let dayOkayForLevel level d = elem d days && addLifetimeForLevel level d > today
     let levelOkay level = maybe False (dayOkayForLevel level . day) <$> backupForLevel level
     fromJust <$> findM (fmap not . levelOkay) [2..]
@@ -127,5 +127,5 @@ inferences seed diffs = let from (Diff f _) = f
                         in concat $ takeWhile (not . null) $ iterate extend [[]]
 
 -- For when we just need to know which are constructable but not how
-constructable :: Day -> [Diff] -> [Day]
-constructable seed diffs = inferredDay seed <$> inferences seed diffs
+daysConstructableFrom :: Day -> [Diff] -> [Day]
+daysConstructableFrom seed diffs = inferredDay seed <$> inferences seed diffs
