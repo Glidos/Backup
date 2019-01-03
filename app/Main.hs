@@ -116,14 +116,13 @@ compressAndUploadDiff diff = do
 -- seed because this function is used only in cases where that is the case
 inferredDay :: Day -> [Diff] -> Day
 inferredDay seed [] = seed
-inferredDay _ (Diff _ to : _) = to
+inferredDay _ (diff:_) = toDay diff
 
 -- Given a seed day and a set of diffs, return the set of possible inference sequences
 -- This allows us to work out what backups can be created from a set of diffs and for
 -- each such backup, which of those diffs are needed.
 inferences :: Day -> [Diff] -> [[Diff]]
-inferences seed diffs = let from (Diff f _) = f
-                            extend infs = [d:ds | ds <- infs, d <- diffs, inferredDay seed ds == from d]
+inferences seed diffs = let extend infs = [d:inf | inf <- infs, d <- diffs, inferredDay seed inf == fromDay d]
                         in concat $ takeWhile (not . null) $ iterate extend [[]]
 
 -- For when we just need to know which are constructable but not how

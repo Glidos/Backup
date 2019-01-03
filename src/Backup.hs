@@ -32,7 +32,7 @@ data Frequency = Daily | Weekly | Monthly | Yearly deriving (Eq, Ord)
 
 data Periodic = Periodic Frequency Day deriving (Eq, Ord)
 data Incremental = Incremental Integer Day
-data Diff = Diff Day Day
+data Diff = Diff {fromDay :: Day, toDay :: Day}
 
 -- Daily backups are held as directories with the names matching the precise date
 -- Copies held for longer periods are held as directories with names matching
