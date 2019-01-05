@@ -30,6 +30,8 @@ main = do
     compressAndUploadDiff diff
     remove diff
     putStrLn . (++) ("Level " ++ show level ++ " backup complete ") . formatTime defaultTimeLocale "%H:%M:%S" =<< getCurrentTime
+    putStrLn ""
+    checkAndTidyRemoteDiffs $ day todaysBackup
 
 
 createTodaysBackup :: IO Periodic
@@ -102,6 +104,26 @@ compressAndUploadDiff diff = do
     putStrLn . ("Starting upload " ++) . formatTime defaultTimeLocale "%H:%M:%S" =<< getCurrentTime
     upload diff
     removeArchive diff
+
+
+checkAndTidyRemoteDiffs :: Day -> IO ()
+checkAndTidyRemoteDiffs today = do
+    level1 <- maybe (fail "Level 1 backup missing") return =<< backupForLevel 1
+    allDiffs <- remoteDiffs
+    -- generate the inferences for the 2 most recent inferable backups
+    let infs = takeFromEnd 2 $ sortOn (inferredDay $ day level1) $ inferences (day level1) allDiffs
+    let days = map (inferredDay $ day level1) infs
+    unless (today `elem` days) $ fail "Cannot generate todays backup"
+    putStrLn $ unwords $ "Most recent backup days:" : map show days
+    putStrLn $ "Level 1: " ++ display level1
+    let requiredDiffs = nub $ concat infs
+    requiredDiffsOkay <- traverse remoteOkay requiredDiffs
+    let reportDiff diff okay = display diff ++ " " ++ if okay then "ok" else "corrupt"
+    putStr $ unlines $ "Keeping files:" : zipWith reportDiff requiredDiffs requiredDiffsOkay
+    unless (and requiredDiffsOkay) $ fail "A required diff is corrupt"
+    let toDelete = allDiffs \\ requiredDiffs
+    putStr $ unlines $ "Deleting:" : map display toDelete
+    removeRemotes toDelete
 
 
 -- Given a seed day and a sequence of diffs, return the day of the backup that can be generated.

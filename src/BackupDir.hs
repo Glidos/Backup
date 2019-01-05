@@ -13,12 +13,14 @@ module BackupDir
 , upload
 , remoteItems
 , remoteOkay
+, removeRemotes
 ) where
 
 import Data.List
 import qualified Data.ByteString.Char8 as C
 import qualified Data.ByteString.Lazy.Char8 as LC
 import Data.Maybe
+import Data.Foldable
 import System.FilePath.Posix
 import System.Directory
 import System.Process.Typed
@@ -75,6 +77,11 @@ class BackupDir a where
 
     upload :: a -> IO ()
     upload bk = SFTP.withSFTP (remoteUser ++ "@" ++ remoteHost) $ \sftp -> SFTP.upload sftp (archivePath bk) (remoteDir </> archiveName bk)
+
+    removeRemotes :: [a] -> IO ()
+    removeRemotes remotes = SFTP.withSFTP (remoteUser ++ "@" ++ remoteHost) $ \sftp ->
+        traverse_ (SFTP.deleteFile sftp . (</>) remoteDir . archiveName) remotes
+        >> traverse_ (removeFile . checksumPath) remotes
 
 remoteItems :: IO [String]
 remoteItems = SFTP.withSFTP (remoteUser ++ "@" ++ remoteHost) $ \sftp ->
