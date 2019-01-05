@@ -16,11 +16,11 @@ module Backup
 , remoteDiffs
 ) where
 
+import Util
 import Data.Time.Calendar
 import Data.Time.Clock
 import Data.Time.Format
 import Data.Maybe
-import Data.Bool
 import BackupDir
 import System.Directory
 import System.FilePath.Posix
@@ -102,9 +102,6 @@ dayForPath useSubdir path =
 -- which to derive the day.
 backupsForPeriod :: Frequency -> IO [Periodic]
 backupsForPeriod freq = traverse ((Periodic freq <$>) . dayForPath (freq /= Daily) . (baseDir </>)) . filter (testParseDay freq) =<< listDirectory baseDir
-
-partialM :: Monad m => (a -> m Bool) -> a -> m (Maybe a)
-partialM p x = bool Nothing (Just x) <$> p x
 
 -- Return the current Incremental backkup for a level if present
 backupForLevel :: Integer -> IO (Maybe Incremental)

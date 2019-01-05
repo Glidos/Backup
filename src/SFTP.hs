@@ -6,6 +6,7 @@ module SFTP
     deleteFile
     ) where
 
+import Util
 import System.IO
 import System.Process.Typed
 import Data.List
@@ -51,9 +52,6 @@ download sftp rpath lpath = runCommand sftp (unwords ["get", rpath, lpath]) (isI
 deleteFile :: SFTP -> String -> IO ()
 deleteFile sftp path = runCommand sftp (unwords ["rm", path]) ((<=1) . length. lines) (const ())
 -- More than 1 line implies an error message
-
-dropFromEnd :: Int -> [a] -> [a]
-dropFromEnd n = take =<< subtract n . length
 
 runCommand :: SFTP -> String -> (String -> Bool) -> (String -> a) -> IO a
 runCommand (SFTP p) cmd test value =

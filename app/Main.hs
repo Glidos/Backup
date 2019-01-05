@@ -1,9 +1,9 @@
 module Main where
 
+import Util
 import Backup
 import BackupDir
 import Data.Tuple.Extra
-import Data.Convertible
 import Data.List
 import Data.Time.Clock
 import Data.Time.Calendar
@@ -12,7 +12,6 @@ import Data.Foldable
 import Data.Maybe
 import Control.Monad
 import Control.Monad.Extra
-import System.Posix.Types
 import System.Posix.Files
 import System.Directory.Tree
 
@@ -53,9 +52,6 @@ numCopies Daily = 7
 numCopies Weekly = 4
 numCopies Monthly = 12
 
-dropFromEnd :: Int -> [a] -> [a]
-dropFromEnd n = take =<< subtract n . length
-
 removeOldCopies :: IO ()
 removeOldCopies =
     let removeOldCopiesFor freq =  traverse_ remove =<< dropFromEnd (numCopies freq) . sort <$> backupsForPeriod freq
@@ -87,9 +83,6 @@ showFileShort path size = show (quot size (1024 * 1024)) ++ " " ++ path
 
 showFileLong :: String -> FileStatus -> String
 showFileLong path fstat = show (fileSize fstat) ++ formatTime defaultTimeLocale "%Y-%m-%d %H:%M:%S" (epochTimeToUTCTime $ modificationTime fstat) ++ path
-
-epochTimeToUTCTime :: EpochTime -> UTCTime
-epochTimeToUTCTime = convert
 
 -- Report the overall space used by a directory and enumerate files over 8MB
 report :: String -> IO ()
