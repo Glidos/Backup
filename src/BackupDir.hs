@@ -16,6 +16,8 @@ module BackupDir
 , removeRemotes
 ) where
 
+import Control.Exception
+import Control.Monad
 import Data.List
 import qualified Data.ByteString.Char8 as C
 import qualified Data.ByteString.Lazy.Char8 as LC
@@ -24,6 +26,7 @@ import Data.Foldable
 import System.FilePath.Posix
 import System.Directory
 import System.Process.Typed
+import System.IO.Error
 import Host
 import qualified SFTP
 import Text.Regex
@@ -64,7 +67,7 @@ class BackupDir a where
     storedHash bk = C.readFile $ checksumPath bk
 
     remoteOkay :: a -> IO Bool
-    remoteOkay bk = (==) <$> remoteHash bk <*> storedHash bk
+    remoteOkay bk = either (const False) id <$> tryJust (guard . isDoesNotExistError) ((==) <$> remoteHash bk <*> storedHash bk)
 
     compress :: a -> IO String
     compress bk = createDirectoryIfMissing False (takeDirectory $ archivePath bk)
@@ -81,7 +84,7 @@ class BackupDir a where
     removeRemotes :: [a] -> IO ()
     removeRemotes remotes = SFTP.withSFTP (remoteUser ++ "@" ++ remoteHost) $ \sftp ->
         traverse_ (SFTP.deleteFile sftp . (</>) remoteDir . archiveName) remotes
-        >> traverse_ (removeFile . checksumPath) remotes
+        >> traverse_ (tryJust (guard . isDoesNotExistError) . removeFile . checksumPath) remotes
 
 remoteItems :: IO [String]
 remoteItems = SFTP.withSFTP (remoteUser ++ "@" ++ remoteHost) $ \sftp ->
