@@ -21,6 +21,7 @@ import Data.Time.Calendar
 import Data.Time.Clock
 import Data.Time.Format
 import Data.Maybe
+import Data.List
 import BackupDir
 import System.Directory
 import System.FilePath.Posix
@@ -113,7 +114,9 @@ backupTarget = "/"
 -- Unchanged files will share disc space with the existing backup
 createBackupForDayBasedOn :: Backup b => Day -> b -> IO Periodic
 createBackupForDayBasedOn day previous = let backup = Periodic Daily day
-                                         in runProcess_ (shell $ "rsync -ra --files-from=rsync-list --exclude-from=backup-exclude --link-dest=" ++ path previous ++ " " ++ backupTarget ++ " " ++ path backup)
+                                         in runProcess_ (shell $ intercalate ";" ["rsync -ra --files-from=rsync-list --exclude-from=backup-exclude --link-dest=" ++ path previous ++ " " ++ backupTarget ++ " " ++ path backup,
+                                                                                  "cd " ++ path backup,
+                                                                                  "find . > file_list"])
                                             >> return backup
 
 -- Create a copy of a backup, sharing disc space
