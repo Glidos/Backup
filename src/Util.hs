@@ -3,6 +3,7 @@ module Util
 , dropFromEnd
 , takeFromEnd
 , partialM
+, returnFromJust
 ) where
 
 import Data.Bool
@@ -25,4 +26,8 @@ takeFromEnd n = drop =<< subtract n . length
 -- Version of partial that works in a monadic context
 partialM :: Monad m => (a -> m Bool) -> a -> m (Maybe a)
 partialM p x = bool Nothing (Just x) <$> p x
+
+-- Strip Maybe values, handing Nothing as failure
+returnFromJust :: Monad m => String -> Maybe a -> m a
+returnFromJust msg = maybe (fail msg) return
 

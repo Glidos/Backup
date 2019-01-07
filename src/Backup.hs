@@ -85,16 +85,16 @@ testParseDay freq = (/= Nothing) . parseDay freq
 formatLevel :: Integer -> String
 formatLevel level = "Level" ++ show level
 
--- Derive the day from a backup path
+fromSingleton :: [a] -> Maybe a
+fromSingleton [v] = Just v
+fromSingleton _   = Nothing
+
+-- Derive the day from a backup path. For backup copies that have an outer wrapper directory,
+-- we cannot derive the day from the wrapper directory's name. We have to look within for a
+-- single subdirectory named according to the day. (Multiple subdirectories would be a sign
+-- of something having gone wrong).
 dayForPath :: Bool -> String -> IO Day
-dayForPath useSubdir path =
-    do  let errorMessage = "Corrupt backup: " ++ path
-        dayString <- if useSubdir then do subdirs <- listDirectory path
-                                          case subdirs of [subdir] -> return subdir
-                                                          _        -> fail errorMessage
-                                  else return $ takeFileName path
-        case parseDay Daily dayString of Just day -> return day
-                                         Nothing  -> fail errorMessage
+dayForPath useSubdir path = returnFromJust ("Corrupt backup: " ++ path) . (parseDay Daily =<<) =<< (if useSubdir then fromSingleton <$> listDirectory path else return $ Just $ takeFileName path)
 
 -- List the current periodic backups for a specific frequency
 --

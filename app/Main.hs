@@ -14,6 +14,7 @@ import Control.Monad
 import Control.Monad.Extra
 import System.Posix.Files
 import System.Directory.Tree
+import Safe
 
 main :: IO ()
 main = do
@@ -24,7 +25,7 @@ main = do
     putStrLn $ "Level " ++ show level ++ " missing, not constructable or out of date"
     traverse_ (traverse remove <=< backupForLevel) [level..maxLevelStored]
     unless (level > maxLevelStored) $ void $ createIncrementalCopy level todaysBackup
-    previous <- maybe (fail "previous level mysteriously disappeared") return =<< backupForLevel (level - 1)
+    previous <- returnFromJust "previous level mysteriously disappeared" =<< backupForLevel (level - 1)
     diff <- diffBetween previous todaysBackup
     report $ path diff
     compressAndUploadDiff diff
@@ -36,9 +37,7 @@ main = do
 
 createTodaysBackup :: IO Periodic
 createTodaysBackup = do
-    previous <- backupsForPeriod Daily
-    when (null previous) $ fail "no previous backup"
-    let mostRecent = maximum previous
+    mostRecent <- returnFromJust "no previous backup" . maximumMay =<< backupsForPeriod Daily
     today <- utctDay <$> getCurrentTime
     when (day mostRecent == today) $ fail "backup for today already created"
     createBackupForDayBasedOn today mostRecent
@@ -74,7 +73,7 @@ addLifetimeForLevel 4 = addDays 1
 -- of date
 levelToUpdate :: Day -> IO Integer
 levelToUpdate today = do
-    level1 <- backupForLevel 1 >>= maybe (fail "Level 1 backup missing") return
+    level1 <- returnFromJust "Level 1 backup missing" =<< backupForLevel 1
     days <- daysConstructableFrom (day level1) <$> (filterM remoteOkay =<< remoteDiffs)
     let dayOkayForLevel level d = elem d days && addLifetimeForLevel level d > today
     let levelOkay level = maybe False (dayOkayForLevel level . day) <$> backupForLevel level
@@ -108,7 +107,7 @@ compressAndUploadDiff diff = do
 
 checkAndTidyRemoteDiffs :: Day -> IO ()
 checkAndTidyRemoteDiffs today = do
-    level1 <- maybe (fail "Level 1 backup missing") return =<< backupForLevel 1
+    level1 <- returnFromJust "Level 1 backup missing" =<< backupForLevel 1
     allDiffs <- remoteDiffs
     -- generate the inferences for the 2 most recent inferable backups
     let infs = takeFromEnd 2 $ sortOn (inferredDay $ day level1) $ inferences (day level1) allDiffs

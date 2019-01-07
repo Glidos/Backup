@@ -29,6 +29,7 @@ dependencies:
 - extra
 - typed-process
 - base >= 4.7 && < 5
+- safe
 name: Backup
 version: 0.1.0.0
 extra-source-files:
