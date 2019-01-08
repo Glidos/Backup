@@ -114,14 +114,14 @@ checkAndTidyRemoteDiffs today = do
     let days = map (inferredDay $ day level1) infs
     unless (today `elem` days) $ fail "Cannot generate todays backup"
     putStrLn $ unwords $ "Most recent backup days:" : map show days
-    putStrLn $ "Level 1: " ++ display level1
+    putStrLn $ "Level 1: " ++ show level1
     let requiredDiffs = nub $ concat infs
     requiredDiffsOkay <- traverse remoteOkay requiredDiffs
-    let reportDiff diff okay = display diff ++ " " ++ if okay then "ok" else "corrupt"
+    let reportDiff diff okay = show diff ++ " " ++ if okay then "ok" else "corrupt"
     putStr $ unlines $ "Keeping files:" : zipWith reportDiff requiredDiffs requiredDiffsOkay
     unless (and requiredDiffsOkay) $ fail "A required diff is corrupt"
     let toDelete = allDiffs \\ requiredDiffs
-    putStr $ unlines $ "Deleting:" : map display toDelete
+    putStr $ unlines $ "Deleting:" : map show toDelete
     removeRemotes toDelete
 
 

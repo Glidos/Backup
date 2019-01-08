@@ -1,7 +1,6 @@
 module BackupDir
 ( BackupDir
 , baseDir
-, display
 , subDir
 , wrapperDir
 , path
@@ -36,17 +35,16 @@ baseDir = "/home/backup"
 
 -- Attributes to do with keeping backup information on disc in directories
 
-class BackupDir a where
-    display :: a -> String
+class Show a => BackupDir a where
     subDir :: a -> Maybe String -- Some backups are grouped in subdirectories (e.g. Diffs)
     wrapperDir :: a -> Maybe String -- Some backups are stored in wrapper directories (e.g. monthly copies in YYYYMM)
     path :: a -> String -- Where the backup is kept
     outerPath :: a -> String -- What to delete to remove the backup (the wrapper if there is one, otherwise same as path)
-    path bk = foldr1 (</>) $ [baseDir] ++ maybeToList (subDir bk) ++ maybeToList (wrapperDir bk) ++ [display bk]
-    outerPath bk = foldr1 (</>) $ [baseDir] ++ maybeToList (subDir bk) ++ [fromMaybe (display bk) (wrapperDir bk)]
+    path bk = foldr1 (</>) $ [baseDir] ++ maybeToList (subDir bk) ++ maybeToList (wrapperDir bk) ++ [show bk]
+    outerPath bk = foldr1 (</>) $ [baseDir] ++ maybeToList (subDir bk) ++ [fromMaybe (show bk) (wrapperDir bk)]
 
     archiveName :: a -> String
-    archiveName bk = display bk ++ ".tar.gpg"
+    archiveName bk = show bk ++ ".tar.gpg"
 
     archivePath :: a -> String
     archivePath bk = baseDir </> "Archives" </> archiveName bk
@@ -71,7 +69,7 @@ class BackupDir a where
 
     compress :: a -> IO String
     compress bk = createDirectoryIfMissing False (takeDirectory $ archivePath bk)
-                  >> runProcess_ (shell $ "cd " ++ takeDirectory (path bk) ++ "; tar -c " ++ display bk ++ " | gpg --batch -c --compress-algo bzip2 --passphrase-file ~/passphrase - > " ++ archivePath bk)
+                  >> runProcess_ (shell $ "cd " ++ takeDirectory (path bk) ++ "; tar -c " ++ show bk ++ " | gpg --batch -c --compress-algo bzip2 --passphrase-file ~/passphrase - > " ++ archivePath bk)
                   >> return (archivePath bk)
 
     makeHash :: a -> IO ()

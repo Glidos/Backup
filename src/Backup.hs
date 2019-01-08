@@ -4,7 +4,6 @@ module Backup
 , Incremental(..)
 , Diff(..)
 , Backup(..)
-, display
 , backupsForPeriod
 , backupForLevel
 , createBackupForDayBasedOn
@@ -35,23 +34,29 @@ data Periodic = Periodic Frequency Day deriving (Eq, Ord)
 data Incremental = Incremental Integer Day
 data Diff = Diff {fromDay :: Day, toDay :: Day} deriving Eq
 
+instance Show Periodic where
+    show (Periodic _ day) = show day
+
+instance Show Incremental where
+    show (Incremental _ day) = show day
+
+instance Show Diff where
+    show (Diff from to) = show from ++ "to" ++ show to
+
 -- Daily backups are held as directories with the names matching the precise date
 -- Copies held for longer periods are held as directories with names matching
 -- the week, month or year and with a subdirectory named to match the precise
 -- date.
 instance BackupDir Periodic where
-    display (Periodic _ day) = show day
     subDir _ = Nothing
     wrapperDir (Periodic freq day) = case freq of Daily -> Nothing
                                                   _     -> Just $ formatDay freq day
 
 instance BackupDir Incremental where
-    display (Incremental _ day) = show day
     subDir _ = Nothing
     wrapperDir (Incremental level _) = Just $ formatLevel level
 
 instance BackupDir Diff where
-    display (Diff from to) = show from ++ "to" ++ show to
     subDir _ = Just "Diffs"
     wrapperDir _ = Nothing
 
