@@ -11,22 +11,21 @@ module Backup
 , createIncrementalCopy
 , periodIsRepresented
 , diffBetween
-, remove
 , remoteDiffs
 ) where
 
-import Util
-import Data.Time.Calendar
-import Data.Time.Clock
-import Data.Time.Format
-import Data.Maybe
-import Data.List
-import BackupDir
-import System.Directory
-import System.FilePath.Posix
-import System.Process.Typed
-import Control.Monad
-import Text.Regex
+import Data.Time.Calendar    (Day)
+import Data.Time.Format      (defaultTimeLocale, formatTime, parseTimeM)
+import Data.Maybe            (mapMaybe)
+import Data.List             (intercalate)
+import BackupDir             (BackupDir, subDir, wrapperDir, baseDir, path, outerPath, remoteItems)
+import System.Directory      (doesDirectoryExist, createDirectoryIfMissing, listDirectory)
+import System.FilePath.Posix ((</>), takeDirectory, takeFileName)
+import System.Process.Typed  (runProcess_, shell)
+import Control.Monad         ((<=<))
+import Text.Regex            (mkRegex, matchRegex)
+
+import Util                  (returnFromJust, partialM)
 
 data Frequency = Daily | Weekly | Monthly | Yearly deriving (Eq, Ord)
 
@@ -133,12 +132,12 @@ createCopy base backup = createDirectoryIfMissing False (outerPath backup)
 -- For a given frequency, create a periodic copy of an existing backup,
 -- sharing disc space
 createPeriodicCopy :: Backup b => Frequency -> b -> IO Periodic
-createPeriodicCopy freq base = ((>>) <$> createCopy base <*> return) $ Periodic freq $ day base
+createPeriodicCopy freq base = createCopy base bk >> return bk where bk = Periodic freq $ day base
 
 -- For a given level, create an incremental copy of an existing backup,
 -- sharing disc space
 createIncrementalCopy :: Backup b => Integer -> b -> IO Incremental
-createIncrementalCopy level base = ((>>) <$> createCopy base <*> return) $ Incremental level $ day base
+createIncrementalCopy level base = createCopy base bk >> return bk where bk = Incremental level $ day base
 
 -- For an existing backup and a frequency, test whether there is a corresponding
 -- periodic copy. We don't expect a copy for the specific day; we just wish to

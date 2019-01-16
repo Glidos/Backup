@@ -15,21 +15,21 @@ module BackupDir
 , removeRemotes
 ) where
 
-import Control.Exception
-import Control.Monad
-import Data.List
 import qualified Data.ByteString.Char8 as C
 import qualified Data.ByteString.Lazy.Char8 as LC
-import Data.Maybe
-import Data.Foldable
-import System.FilePath.Posix
-import System.Directory
-import System.Process.Typed
-import System.IO.Error
-import Host
+import           Control.Exception     (tryJust)
+import           Control.Monad         (guard)
+import           Data.Maybe            (maybeToList, fromMaybe, mapMaybe)
+import           Data.Foldable         (traverse_)
+import           System.FilePath.Posix ((</>), takeDirectory)
+import           System.Directory      (removeDirectoryRecursive, removeFile, createDirectoryIfMissing)
+import           System.Process.Typed  (runProcess_, readProcess_, shell)
+import           System.IO.Error       (isDoesNotExistError)
+import           Text.Regex            (mkRegex, matchRegex)
+import           Network.HTTP.Simple   (parseRequest, httpBS, getResponseBody)
+
+import           Host                  (httpHost, httpDir, remoteUser, remoteHost, remoteDir)
 import qualified SFTP
-import Text.Regex
-import Network.HTTP.Simple
 
 baseDir = "/home/backup"
 
@@ -43,46 +43,46 @@ class Show a => BackupDir a where
     path bk = foldr1 (</>) $ [baseDir] ++ maybeToList (subDir bk) ++ maybeToList (wrapperDir bk) ++ [show bk]
     outerPath bk = foldr1 (</>) $ [baseDir] ++ maybeToList (subDir bk) ++ [fromMaybe (show bk) (wrapperDir bk)]
 
-    archiveName :: a -> String
-    archiveName bk = show bk ++ ".tar.gpg"
+archiveName :: BackupDir a => a -> String
+archiveName bk = show bk ++ ".tar.gpg"
 
-    archivePath :: a -> String
-    archivePath bk = baseDir </> "Archives" </> archiveName bk
+archivePath :: BackupDir a => a -> String
+archivePath bk = baseDir </> "Archives" </> archiveName bk
 
-    checksumPath :: a -> String
-    checksumPath bk = baseDir </> "checksums" </> archiveName bk
+checksumPath :: BackupDir a => a -> String
+checksumPath bk = baseDir </> "checksums" </> archiveName bk
 
-    remove :: a -> IO ()
-    remove bk = removeDirectoryRecursive $ outerPath bk
+remove :: BackupDir a => a -> IO ()
+remove bk = removeDirectoryRecursive $ outerPath bk
 
-    removeArchive :: a -> IO ()
-    removeArchive bk = removeFile $ archivePath bk
+removeArchive :: BackupDir a => a -> IO ()
+removeArchive bk = removeFile $ archivePath bk
 
-    remoteHash :: a -> IO C.ByteString
-    remoteHash bk = head . C.words . getResponseBody <$> (httpBS =<< parseRequest ("http://" ++ httpHost ++ "/md5sum.php?file=" ++ httpDir </> archiveName bk))
+remoteHash :: BackupDir a => a -> IO C.ByteString
+remoteHash bk = head . C.words . getResponseBody <$> (httpBS =<< parseRequest ("http://" ++ httpHost ++ "/md5sum.php?file=" ++ httpDir </> archiveName bk))
 
-    storedHash :: a -> IO C.ByteString
-    storedHash bk = C.readFile $ checksumPath bk
+storedHash :: BackupDir a => a -> IO C.ByteString
+storedHash bk = C.readFile $ checksumPath bk
 
-    remoteOkay :: a -> IO Bool
-    remoteOkay bk = either (const False) id <$> tryJust (guard . isDoesNotExistError) ((==) <$> remoteHash bk <*> storedHash bk)
+remoteOkay :: BackupDir a => a -> IO Bool
+remoteOkay bk = either (const False) id <$> tryJust (guard . isDoesNotExistError) ((==) <$> remoteHash bk <*> storedHash bk)
 
-    compress :: a -> IO String
-    compress bk = createDirectoryIfMissing False (takeDirectory $ archivePath bk)
-                  >> runProcess_ (shell $ "cd " ++ takeDirectory (path bk) ++ "; tar -c " ++ show bk ++ " | gpg --batch -c --compress-algo bzip2 --passphrase-file ~/passphrase - > " ++ archivePath bk)
-                  >> return (archivePath bk)
+compress :: BackupDir a => a -> IO String
+compress bk = createDirectoryIfMissing False (takeDirectory $ archivePath bk)
+                >> runProcess_ (shell $ "cd " ++ takeDirectory (path bk) ++ "; tar -c " ++ show bk ++ " | gpg --batch -c --compress-algo bzip2 --passphrase-file ~/passphrase - > " ++ archivePath bk)
+                >> return (archivePath bk)
 
-    makeHash :: a -> IO ()
-    makeHash bk = createDirectoryIfMissing False (takeDirectory $ checksumPath bk)
-                  >> (writeFile (checksumPath bk) . head . words . LC.unpack . fst =<< readProcess_ (shell $ "md5sum " ++ archivePath bk))
+makeHash :: BackupDir a => a -> IO ()
+makeHash bk = createDirectoryIfMissing False (takeDirectory $ checksumPath bk)
+                >> (writeFile (checksumPath bk) . head . words . LC.unpack . fst =<< readProcess_ (shell $ "md5sum " ++ archivePath bk))
 
-    upload :: a -> IO ()
-    upload bk = SFTP.withSFTP (remoteUser ++ "@" ++ remoteHost) $ \sftp -> SFTP.upload sftp (archivePath bk) (remoteDir </> archiveName bk)
+upload :: BackupDir a => a -> IO ()
+upload bk = SFTP.withSFTP (remoteUser ++ "@" ++ remoteHost) $ \sftp -> SFTP.upload sftp (archivePath bk) (remoteDir </> archiveName bk)
 
-    removeRemotes :: [a] -> IO ()
-    removeRemotes remotes = SFTP.withSFTP (remoteUser ++ "@" ++ remoteHost) $ \sftp ->
-        traverse_ (SFTP.deleteFile sftp . (</>) remoteDir . archiveName) remotes
-        >> traverse_ (tryJust (guard . isDoesNotExistError) . removeFile . checksumPath) remotes
+removeRemotes :: BackupDir a => [a] -> IO ()
+removeRemotes remotes = SFTP.withSFTP (remoteUser ++ "@" ++ remoteHost) $ \sftp ->
+    traverse_ (SFTP.deleteFile sftp . (</>) remoteDir . archiveName) remotes
+    >> traverse_ (tryJust (guard . isDoesNotExistError) . removeFile . checksumPath) remotes
 
 remoteItems :: IO [String]
 remoteItems = SFTP.withSFTP (remoteUser ++ "@" ++ remoteHost) $ \sftp ->

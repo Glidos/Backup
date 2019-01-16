@@ -6,12 +6,12 @@ module SFTP
     deleteFile
     ) where
 
-import Util
-import System.IO
-import System.Process.Typed
-import Data.List
-import Data.Bool
-import Control.Conditional
+import System.IO            (Handle, hPutStrLn, hGetChar, hGetLine, hFlush, hClose)
+import System.Process.Typed (Process, getStdin, getStdout, setStdin, setStdout, setStderr, closed, createPipe, shell, withProcess, checkExitCode)
+import Data.List            (isInfixOf, isPrefixOf)
+import Control.Conditional  (select)
+
+import Util                 (dropFromEnd)
 
 newtype SFTP = SFTP (Process Handle Handle ())
 
@@ -66,9 +66,11 @@ runCommand (SFTP p) cmd test value =
 --
 -- Implment by buffering the read-in characters in reverse order.
 hGetUptoMark :: Handle -> String -> IO String
-hGetUptoMark h mark = f "" where
+hGetUptoMark h mark = reverse . drop len <$> f "" where
+    rmark = reverse mark
+    len = length mark
     f buffer =
-        if reverse mark `isPrefixOf` buffer && (length mark == length buffer || buffer!!length mark == '\n')
-            then return $ reverse $ drop (length mark) buffer
+        if rmark `isPrefixOf` buffer && (null (drop len buffer) || buffer!!len == '\n')
+            then return buffer
             else f . (: buffer) =<< hGetChar h
 
