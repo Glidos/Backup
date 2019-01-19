@@ -13,6 +13,7 @@ tests:
 copyright: Copyright (c) Paul Gardiner
 maintainer: haskell@glidos.net
 dependencies:
+- transformers
 - unix-time
 - convertible
 - unix
