@@ -65,12 +65,18 @@ runCommand (SFTP p) cmd test value =
 -- and return what has been read upto that mark.
 --
 -- Implment by buffering the read-in characters in reverse order.
+--
+-- The mark should be recognised only at the begining of a line. Since the characters
+-- are buffered in reverse, the check required is that the mark appears followed by
+-- either no characters or a '\n'. That can be tested by, checking for the mark,
+-- dropping it and calling take 1 (which may yield an empty list) and checking that
+-- all obtained characters are '\n'
 hGetUptoMark :: Handle -> String -> IO String
 hGetUptoMark h mark = reverse . drop len <$> f "" where
     rmark = reverse mark
     len = length mark
     f buffer =
-        if rmark `isPrefixOf` buffer && (null (drop len buffer) || buffer!!len == '\n')
+        if rmark `isPrefixOf` buffer && all (== '\n') (take 1 $ drop len buffer)
             then return buffer
             else f . (: buffer) =<< hGetChar h
 
