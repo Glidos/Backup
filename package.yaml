@@ -13,6 +13,8 @@ tests:
 copyright: Copyright (c) Paul Gardiner
 maintainer: haskell@glidos.net
 dependencies:
+- split
+- utility-ht
 - transformers
 - unix-time
 - convertible
