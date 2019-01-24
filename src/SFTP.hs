@@ -1,18 +1,22 @@
 module SFTP
     ( SFTP,
     withSFTP,
+    withSFTPE,
     listDirectory,
     upload,
     download,
     deleteFile
     ) where
 
-import System.IO                        (Handle, hPutStrLn, hGetChar, hGetLine, hFlush, hClose, hGetContents)
-import System.Process.Typed             (Process, getStdin, getStdout, setStdin, setStdout, setStderr, closed, createPipe, shell, withProcess, checkExitCode)
+import System.Exit                      (ExitCode(ExitSuccess, ExitFailure))
+import System.IO                        (Handle, hPutStrLn, hFlush, hClose, hGetContents)
+import System.Process.Typed             (Process, getStdin, getStdout, setStdin, setStdout, setStderr, closed, createPipe, shell, withProcess, waitExitCode)
 import Data.List                        (isInfixOf, isPrefixOf)
 import Data.List.Split                  (splitWhen)
 import Control.Conditional              (select)
-import Control.Monad.Trans.State.Strict (StateT, evalStateT, runStateT, get, state)
+import Control.Monad.Trans.Class        (lift)
+import Control.Monad.Trans.Except       (ExceptT, runExceptT, throwE)
+import Control.Monad.Trans.State.Strict (StateT, evalStateT, get, state)
 import Control.Monad.IO.Class           (liftIO)
 
 import Util (dropFromEnd)
@@ -21,10 +25,13 @@ import Util (dropFromEnd)
 -- as yet unconsumed output. The output is split into lines and then those
 -- lines grouped into replies by treating lines that begin "sftp>" as
 -- delimiters.
-type SFTP a = StateT (Handle, [[String]]) IO a
+type SFTP = ExceptT String (StateT (Handle, [[String]]) IO)
 
 withSFTP :: String -> SFTP a -> IO a
-withSFTP url commands =
+withSFTP url commands =  withSFTPE url commands >>= either fail return
+
+withSFTPE :: String -> SFTP a -> IO (Either String a)
+withSFTPE url commands =
     let config = setStdin createPipe
                $ setStdout createPipe
                $ setStderr closed
@@ -32,11 +39,12 @@ withSFTP url commands =
 
     in withProcess config $ \p -> do
         replies <- parseOutput <$> hGetContents (getStdout p)
-        result <- evalStateT (consumeReply >> commands) (getStdin p, replies)
+        result <- (evalStateT $ runExceptT $ consumeReply >> commands) (getStdin p, replies)
         hClose (getStdin p)
         hClose (getStdout p)
-        checkExitCode p
-        return result
+        code <- waitExitCode p
+        return $ case code of ExitSuccess -> result
+                              ExitFailure i -> Left $ "sftp returned: " ++ show i
 
 cd :: String -> SFTP ()
 cd path = runCommand (unwords ["cd", path]) null (const ())
@@ -67,10 +75,10 @@ parseOutput :: String -> [[String]]
 parseOutput = splitWhen (isPrefixOf "sftp>") . lines
 
 getCmdHandle :: SFTP Handle
-getCmdHandle = fst <$> get
+getCmdHandle = fst <$> lift get
 
 consumeReply :: SFTP [String]
-consumeReply = state $ \(h, r:rs) -> (r, (h, rs))
+consumeReply = lift $ state $ \(h, r:rs) -> (r, (h, rs))
 
 
 runCommand :: String -> ([String] -> Bool) -> ([String] -> a) -> SFTP a
@@ -78,5 +86,5 @@ runCommand cmd test value =
     getCmdHandle >>= \h -> liftIO (hPutStrLn h cmd)
                             >> liftIO (hFlush h)
                             >> consumeReply
-                            >>= select test (return . value) (fail . dropFromEnd 2 . last)
+                            >>= select test (return . value) (throwE . dropFromEnd 2 . last)
 
