@@ -4,6 +4,7 @@ module Util
 , takeFromEnd
 , partialM
 , returnFromJust
+, fromSingleton
 ) where
 
 import Data.Bool
@@ -31,3 +32,7 @@ partialM p x = bool Nothing (Just x) <$> p x
 returnFromJust :: Monad m => String -> Maybe a -> m a
 returnFromJust msg = maybe (fail msg) return
 
+-- Return the contents of a singleton
+fromSingleton :: [a] -> Maybe a
+fromSingleton [v] = Just v
+fromSingleton _   = Nothing

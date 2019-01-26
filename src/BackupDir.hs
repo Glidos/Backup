@@ -8,9 +8,13 @@ module BackupDir
 , remove
 , removeArchive
 , compress
+, decompress
+, addFiles
 , makeHash
 , upload
-, remoteItems
+, downloadL
+, remoteArchives
+, localArchives
 , remoteOkay
 , removeRemotes
 ) where
@@ -22,7 +26,7 @@ import           Control.Monad         (guard)
 import           Data.Maybe            (maybeToList, fromMaybe, mapMaybe)
 import           Data.Foldable         (traverse_)
 import           System.FilePath.Posix ((</>), takeDirectory)
-import           System.Directory      (removeDirectoryRecursive, removeFile, createDirectoryIfMissing)
+import           System.Directory      (removeDirectoryRecursive, removeFile, createDirectoryIfMissing, listDirectory)
 import           System.Process.Typed  (runProcess_, readProcess_, shell)
 import           System.IO.Error       (isDoesNotExistError)
 import           Text.Regex            (mkRegex, matchRegex)
@@ -69,8 +73,16 @@ remoteOkay bk = either (const False) id <$> tryJust (guard . isDoesNotExistError
 
 compress :: BackupDir a => a -> IO String
 compress bk = createDirectoryIfMissing False (takeDirectory $ archivePath bk)
-                >> runProcess_ (shell $ "cd " ++ takeDirectory (path bk) ++ "; tar -c " ++ show bk ++ " | gpg --batch -c --compress-algo bzip2 --passphrase-file ~/passphrase - > " ++ archivePath bk)
+                >> runProcess_ (shell $ "cd " ++ takeDirectory (path bk) ++ "&& tar -c " ++ show bk ++ " | gpg --batch -c --compress-algo bzip2 --passphrase-file ~/passphrase - > " ++ archivePath bk)
                 >> return (archivePath bk)
+
+decompress :: BackupDir a => a -> IO ()
+decompress bk = createDirectoryIfMissing False (takeDirectory $ path bk)
+                    >> runProcess_ (shell $ "cd " ++ takeDirectory (path bk) ++ "&& gpg --batch -d --compress-algo bzip2 --passphrase-file ~/passphrase " ++ archivePath bk ++ " | tar -x")
+
+addFiles :: (BackupDir a, BackupDir b)  => a -> b -> IO ()
+addFiles tgt src = createDirectoryIfMissing False (path tgt)
+                    >> runProcess_ (shell $ "shopt -s dotglob && cp -fal " ++ (path src </> "*") ++ " " ++ path tgt)
 
 makeHash :: BackupDir a => a -> IO ()
 makeHash bk = createDirectoryIfMissing False (takeDirectory $ checksumPath bk)
@@ -79,12 +91,21 @@ makeHash bk = createDirectoryIfMissing False (takeDirectory $ checksumPath bk)
 upload :: BackupDir a => a -> IO ()
 upload bk = SFTP.withSFTP (remoteUser ++ "@" ++ remoteHost) $ SFTP.upload (archivePath bk) (remoteDir </> archiveName bk)
 
+downloadL :: BackupDir a => [a] -> IO ()
+downloadL bks = SFTP.withSFTP (remoteUser ++ "@" ++ remoteHost) $ traverse_ (\bk -> SFTP.download (remoteDir </> archiveName bk) $ archivePath bk) bks
+
 removeRemotes :: BackupDir a => [a] -> IO ()
 removeRemotes remotes = SFTP.withSFTP (remoteUser ++ "@" ++ remoteHost)
     (traverse_ (SFTP.deleteFile . (</>) remoteDir . archiveName) remotes)
     >> traverse_ (tryJust (guard . isDoesNotExistError) . removeFile . checksumPath) remotes
 
-remoteItems :: IO [String]
-remoteItems = SFTP.withSFTP (remoteUser ++ "@" ++ remoteHost) $
-    mapMaybe (fmap head . matchRegex (mkRegex "^(.*)\\.tar\\.gpg$")) <$> SFTP.listDirectory remoteDir
+parseArchive :: String -> Maybe String
+parseArchive = fmap head . matchRegex (mkRegex "^(.*)\\.tar\\.gpg$")
+
+remoteArchives :: IO [String]
+remoteArchives = SFTP.withSFTP (remoteUser ++ "@" ++ remoteHost) $
+    mapMaybe parseArchive <$> SFTP.listDirectory remoteDir
+
+localArchives :: IO [String]
+localArchives = mapMaybe parseArchive <$> listDirectory (baseDir </> "Archives")
 

@@ -2,6 +2,7 @@ module Backup
 ( Frequency(..)
 , Periodic(..)
 , Incremental(..)
+, Special(..)
 , Diff(..)
 , Backup(..)
 , backupsForPeriod
@@ -12,25 +13,27 @@ module Backup
 , periodIsRepresented
 , diffBetween
 , remoteDiffs
+, localArchivedBackups
 ) where
 
 import Data.Time.Calendar    (Day)
 import Data.Time.Format      (defaultTimeLocale, formatTime, parseTimeM)
 import Data.Maybe            (mapMaybe)
 import Data.List             (intercalate)
-import BackupDir             (BackupDir, subDir, wrapperDir, baseDir, path, outerPath, remoteItems)
+import BackupDir             (BackupDir, subDir, wrapperDir, baseDir, path, outerPath, remoteArchives, localArchives)
 import System.Directory      (doesDirectoryExist, createDirectoryIfMissing, listDirectory)
 import System.FilePath.Posix ((</>), takeDirectory, takeFileName)
 import System.Process.Typed  (runProcess_, shell)
 import Control.Monad         ((<=<))
 import Text.Regex            (mkRegex, matchRegex)
 
-import Util                  (returnFromJust, partialM)
+import Util                  (returnFromJust, partialM, fromSingleton)
 
 data Frequency = Daily | Weekly | Monthly | Yearly deriving (Eq, Ord)
 
 data Periodic = Periodic Frequency Day deriving (Eq, Ord)
 data Incremental = Incremental Integer Day
+data Special = Special String Day deriving (Eq, Ord)
 data Diff = Diff {fromDay :: Day, toDay :: Day} deriving Eq
 
 instance Show Periodic where
@@ -38,6 +41,9 @@ instance Show Periodic where
 
 instance Show Incremental where
     show (Incremental _ day) = show day
+
+instance Show Special where
+    show (Special _ day) = show day
 
 instance Show Diff where
     show (Diff from to) = show from ++ "to" ++ show to
@@ -55,6 +61,10 @@ instance BackupDir Incremental where
     subDir _ = Nothing
     wrapperDir (Incremental level _) = Just $ formatLevel level
 
+instance BackupDir Special where
+    subDir (Special name _) = Just name
+    wrapperDir _ = Nothing
+
 instance BackupDir Diff where
     subDir _ = Just "Diffs"
     wrapperDir _ = Nothing
@@ -68,6 +78,9 @@ instance Backup Periodic where
 
 instance Backup Incremental where
     day (Incremental _ d) = d
+
+instance Backup Special where
+    day (Special _ d) = d
 
 
 dayFormatString :: Frequency -> String
@@ -85,13 +98,9 @@ parseDay freq = parseTimeM True defaultTimeLocale (dayFormatString freq)
 testParseDay :: Frequency -> String -> Bool
 testParseDay freq = (/= Nothing) . parseDay freq
 
-
 formatLevel :: Integer -> String
 formatLevel level = "Level" ++ show level
 
-fromSingleton :: [a] -> Maybe a
-fromSingleton [v] = Just v
-fromSingleton _   = Nothing
 
 -- Derive the day from a backup path. For backup copies that have an outer wrapper directory,
 -- we cannot derive the day from the wrapper directory's name. We have to look within for a
@@ -148,9 +157,15 @@ periodIsRepresented freq base = doesDirectoryExist $ outerPath $ Periodic freq $
 parseDiff :: String -> Maybe Diff
 parseDiff = fmap (\[a,b] -> Diff a b) . traverse (parseDay Daily) <=< matchRegex (mkRegex "^(.*)to(.*)$")
 
+parseSpecial :: String -> String -> Maybe Special
+parseSpecial name = fmap (Special name) . parseDay Daily
+
+localArchivedBackups :: IO [Special]
+localArchivedBackups = mapMaybe (parseSpecial "Staged") <$> localArchives
+
 -- List the remotely stored diffs
 remoteDiffs :: IO [Diff]
-remoteDiffs = mapMaybe parseDiff <$> remoteItems
+remoteDiffs = mapMaybe parseDiff <$> remoteArchives
 
 
 -- On the basis of two backups, pull out just the files that are in the

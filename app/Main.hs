@@ -1,6 +1,7 @@
 module Main where
 
 import Data.List             (sort, sortOn, nub, (\\))
+import Data.List.Extra       (maximumOn)
 import Data.Time.Clock       (utctDay, getCurrentTime)
 import Data.Time.Calendar    (Day, addDays, addGregorianMonthsRollOver)
 import Data.Time.Format      (defaultTimeLocale, formatTime)
@@ -10,17 +11,26 @@ import Control.Monad         ((<=<), unless, when, void, filterM)
 import Control.Monad.Extra   (findM, unlessM)
 import System.Posix.Files    (FileStatus, getFileStatus, fileSize, modificationTime)
 import System.Directory.Tree (AnchoredDirTree((:/)), readDirectoryWith)
+import System.Environment    (getArgs)
 import Safe                  (maximumMay)
 
-import Util                  (returnFromJust, dropFromEnd, takeFromEnd, epochTimeToUTCTime)
-import Backup                (Frequency(Daily, Weekly, Monthly, Yearly), Backup, Periodic, Diff, toDay, fromDay,
+import Util                  (returnFromJust, dropFromEnd, takeFromEnd, epochTimeToUTCTime, fromSingleton)
+import Backup                (Frequency(Daily, Weekly, Monthly, Yearly), Backup, Periodic, Special(Special), Diff, toDay, fromDay,
                               day, backupForLevel, backupsForPeriod, createIncrementalCopy, createPeriodicCopy,
-                              createBackupForDayBasedOn, periodIsRepresented, diffBetween, remoteDiffs)
-import BackupDir             (BackupDir, remove, removeArchive, path, remoteOkay, compress, makeHash, upload, removeRemotes)
+                              createBackupForDayBasedOn, periodIsRepresented, diffBetween, remoteDiffs, localArchivedBackups)
+import BackupDir             (BackupDir, remove, removeArchive, path, remoteOkay, compress, decompress,
+                              addFiles, makeHash, upload, downloadL, removeRemotes)
 import Infer                 (inferredDay, inferences, daysConstructableFrom)
 
 main :: IO ()
 main = do
+    args <- getArgs
+    case args of [] -> performDailyTasks
+                 ["restore"] -> restore
+
+
+performDailyTasks :: IO ()
+performDailyTasks = do
     todaysBackup <- createTodaysBackup
     ensurePeriodicCopiesOf todaysBackup
     removeOldCopies
@@ -126,3 +136,24 @@ checkAndTidyRemoteDiffs today = do
     let toDelete = allDiffs \\ requiredDiffs
     putStr $ unlines $ "Deleting:" : map show toDelete
     removeRemotes toDelete
+
+
+restore :: IO ()
+restore = do
+    seed <- returnFromJust "Missing or multiple archives" . fromSingleton =<< localArchivedBackups
+    decompress seed
+    diffs <- remoteDiffs
+    putStrLn $ unwords $ "Downloading diffs:" : map show diffs
+    downloadL diffs
+    putStrLn "Diffs downloaded"
+    let genDiffs = maximumOn (inferredDay $ day seed) $ inferences (day seed) diffs
+    traverse_ decompress genDiffs
+    let staging = Special "Staged" $ inferredDay (day seed) genDiffs
+    putStrLn $ "Most recent generatable backup: " ++ show staging
+    unless (staging == seed) $ do
+        -- Generate the backup for the target day by first copying the seed files and then
+        -- each of the diffs
+        addFiles staging seed
+        -- Reverse the diffs in the inference sequence to add them in order oldest to newest
+        traverse_ (addFiles staging) $ reverse genDiffs
+    putStrLn "Restore complete"
