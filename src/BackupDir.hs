@@ -9,6 +9,7 @@ module BackupDir
 , removeArchive
 , compress
 , decompress
+, showDiff
 , addFiles
 , makeHash
 , upload
@@ -25,8 +26,9 @@ import           Control.Exception     (tryJust)
 import           Control.Monad         (guard)
 import           Data.Maybe            (maybeToList, fromMaybe, mapMaybe)
 import           Data.Foldable         (traverse_)
+import           Data.Bool             (bool)
 import           System.FilePath.Posix ((</>), takeDirectory)
-import           System.Directory      (removeDirectoryRecursive, removeFile, createDirectoryIfMissing, listDirectory)
+import           System.Directory      (removeDirectoryRecursive, removeFile, createDirectoryIfMissing, listDirectory, doesDirectoryExist)
 import           System.Process.Typed  (runProcess_, readProcess_, shell)
 import           System.IO.Error       (isDoesNotExistError)
 import           Text.Regex            (mkRegex, matchRegex)
@@ -80,6 +82,9 @@ decompress :: BackupDir a => a -> IO ()
 decompress bk = createDirectoryIfMissing False (takeDirectory $ path bk)
                     >> runProcess_ (shell $ "cd " ++ takeDirectory (path bk) ++ "&& gpg --batch -d --compress-algo bzip2 --passphrase-file ~/passphrase " ++ archivePath bk ++ " | tar -x")
 
+showDiff :: (BackupDir a, BackupDir b) => a -> b -> IO ()
+showDiff bk1 bk2 = LC.putStr . fst =<< readProcess_ (shell $ "diff -q -r " ++ path bk1 ++ " " ++ path bk2)
+
 addFiles :: (BackupDir a, BackupDir b)  => a -> b -> IO ()
 addFiles tgt src = createDirectoryIfMissing False (path tgt)
                     >> runProcess_ (shell $ "shopt -s dotglob && cp -fal " ++ (path src </> "*") ++ " " ++ path tgt)
@@ -107,5 +112,5 @@ remoteArchives = SFTP.withSFTP (remoteUser ++ "@" ++ remoteHost) $
     mapMaybe parseArchive <$> SFTP.listDirectory remoteDir
 
 localArchives :: IO [String]
-localArchives = mapMaybe parseArchive <$> listDirectory (baseDir </> "Archives")
+localArchives = mapMaybe parseArchive <$> (bool (return []) (listDirectory (baseDir </> "Archives")) =<< doesDirectoryExist (baseDir </> "Archives"))
 

@@ -11,22 +11,27 @@ import Control.Monad         ((<=<), unless, when, void, filterM)
 import Control.Monad.Extra   (findM, unlessM)
 import System.Posix.Files    (FileStatus, getFileStatus, fileSize, modificationTime)
 import System.Directory.Tree (AnchoredDirTree((:/)), readDirectoryWith)
-import System.Environment    (getArgs)
+import System.Environment    (getArgs, getProgName)
 import Safe                  (maximumMay)
 
 import Util                  (returnFromJust, dropFromEnd, takeFromEnd, epochTimeToUTCTime, fromSingleton)
 import Backup                (Frequency(Daily, Weekly, Monthly, Yearly), Backup, Periodic, Special(Special), Diff, toDay, fromDay,
-                              day, backupForLevel, backupsForPeriod, createIncrementalCopy, createPeriodicCopy,
-                              createBackupForDayBasedOn, periodIsRepresented, diffBetween, remoteDiffs, localArchivedBackups)
-import BackupDir             (BackupDir, remove, removeArchive, path, remoteOkay, compress, decompress,
+                              day, backupForLevel, backupsForPeriod, backupsInSubdir, createIncrementalCopy, createPeriodicCopy,
+                              createUploadableCopy, createBackupForDayBasedOn, periodIsRepresented, diffBetween, remoteDiffs, localArchivedBackups)
+import BackupDir             (BackupDir, remove, removeArchive, path, remoteOkay, compress, decompress, showDiff, 
                               addFiles, makeHash, upload, downloadL, removeRemotes)
 import Infer                 (inferredDay, inferences, daysConstructableFrom)
 
 main :: IO ()
 main = do
+    prog <- getProgName
     args <- getArgs
     case args of [] -> performDailyTasks
+                 ["newbase"] -> newBase
+                 ["check"]   -> check
+                 ["install"] -> install
                  ["restore"] -> restore
+                 _           -> putStrLn $ "Usage: " ++ prog ++ " [newbase|check|install|restore]"
 
 
 performDailyTasks :: IO ()
@@ -157,3 +162,26 @@ restore = do
         -- Reverse the diffs in the inference sequence to add them in order oldest to newest
         traverse_ (addFiles staging) $ reverse genDiffs
     putStrLn "Restore complete"
+
+
+newBase :: IO ()
+newBase = do
+    (`unless` fail "NewBase not empty") . null =<< backupsInSubdir "NewBase"
+    (`unless` fail "Archives not empty") . null =<< localArchivedBackups
+    void . compress =<< createUploadableCopy "NewBase" =<< returnFromJust "No daily backups found" . maximumMay =<< backupsForPeriod Daily
+
+check :: IO ()
+check = do
+    archive <- returnFromJust "Missing or multiple archives" . fromSingleton =<< localArchivedBackups
+    decompress archive
+    newbase <- returnFromJust "Missing or multiple potential Level 1 backups" . fromSingleton =<< backupsInSubdir "NewBase"
+    showDiff archive newbase
+    -- remove the decompressed archive (compressed copy unaffected)
+    remove archive
+
+install :: IO ()
+install = do
+    traverse_ remove =<< backupForLevel 1
+    newbase <- returnFromJust "Missing or multiple potential Level 1 backups" . fromSingleton =<< backupsInSubdir "NewBase"
+    createIncrementalCopy 1 newbase
+    remove newbase

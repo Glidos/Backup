@@ -7,9 +7,11 @@ module Backup
 , Backup(..)
 , backupsForPeriod
 , backupForLevel
+, backupsInSubdir
 , createBackupForDayBasedOn
 , createPeriodicCopy
 , createIncrementalCopy
+, createUploadableCopy
 , periodIsRepresented
 , diffBetween
 , remoteDiffs
@@ -121,6 +123,11 @@ backupsForPeriod freq = traverse ((Periodic freq <$>) . dayForPath (freq /= Dail
 backupForLevel :: Integer -> IO (Maybe Incremental)
 backupForLevel level = traverse ((Incremental level <$>) . dayForPath True) =<< partialM doesDirectoryExist (baseDir </> formatLevel level)
 
+-- Return the backups for a specified special sub directory
+backupsInSubdir :: String -> IO [Special]
+backupsInSubdir subdir = createDirectoryIfMissing False (baseDir </> subdir)
+                         >> fmap (Special subdir) . mapMaybe (parseDay Daily) <$> listDirectory (baseDir </> subdir)
+
 backupTarget = "/"
 
 -- Create a backup for today based on an exisiting backup
@@ -132,10 +139,15 @@ createBackupForDayBasedOn day previous = let backup = Periodic Daily day
                                                                                    "find . > file_list"])
                                             >> return backup
 
--- Create a copy of a backup, sharing disc space
+-- Perform copy between backups, sharing disc space
 createCopy :: (Backup b, Backup c) => b -> c -> IO ()
 createCopy base backup = createDirectoryIfMissing False (outerPath backup)
                          >> runProcess_ (shell $ "cp -al " ++ path base ++ " " ++ path backup)
+
+-- Perform copy between backups, restricting to just the files for upload
+createRestrictedCopy :: (Backup b, Backup c) => b -> c -> IO ()
+createRestrictedCopy base backup = createDirectoryIfMissing False (outerPath backup)
+                                    >> runProcess_ (shell $ "rsync -ra --exclude-from=upload-exclude --link-dest=" ++ path base ++ "/ " ++ path base ++ "/ " ++ path backup ++ "/")
 
 
 -- For a given frequency, create a periodic copy of an existing backup,
@@ -147,6 +159,10 @@ createPeriodicCopy freq base = createCopy base bk >> return bk where bk = Period
 -- sharing disc space
 createIncrementalCopy :: Backup b => Integer -> b -> IO Incremental
 createIncrementalCopy level base = createCopy base bk >> return bk where bk = Incremental level $ day base
+
+-- Create a copy of a backup, restricted to just the files for upload
+createUploadableCopy :: Backup b => String -> b -> IO Special
+createUploadableCopy subdir base = createRestrictedCopy base bk >> return bk where bk = Special subdir $ day base
 
 -- For an existing backup and a frequency, test whether there is a corresponding
 -- periodic copy. We don't expect a copy for the specific day; we just wish to
