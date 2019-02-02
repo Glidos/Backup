@@ -19,7 +19,7 @@ import Backup                (Frequency(Daily, Weekly, Monthly, Yearly), Backup,
                               day, backupForLevel, backupsForPeriod, backupsInSubdir, createIncrementalCopy, createPeriodicCopy,
                               createUploadableCopy, createBackupForDayBasedOn, periodIsRepresented, diffBetween, remoteDiffs, localArchivedBackups)
 import BackupDir             (BackupDir, remove, removeArchive, path, remoteOkay, compress, decompress, showDiff, 
-                              addFiles, makeHash, upload, downloadL, removeRemotes)
+                              addFiles, applyFileList, makeHash, upload, downloadL, removeRemotes)
 import Infer                 (inferredDay, inferences, daysConstructableFrom)
 
 main :: IO ()
@@ -161,6 +161,8 @@ restore = do
         addFiles staging seed
         -- Reverse the diffs in the inference sequence to add them in order oldest to newest
         traverse_ (addFiles staging) $ reverse genDiffs
+        -- The file list in the staging diectory will now be up to date. Remove any files it doesn't mention
+        applyFileList staging
     putStrLn "Restore complete"
 
 

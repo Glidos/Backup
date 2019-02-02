@@ -11,6 +11,7 @@ module BackupDir
 , decompress
 , showDiff
 , addFiles
+, applyFileList
 , makeHash
 , upload
 , downloadL
@@ -24,11 +25,15 @@ import qualified Data.ByteString.Char8 as C
 import qualified Data.ByteString.Lazy.Char8 as LC
 import           Control.Exception     (tryJust)
 import           Control.Monad         (guard)
+import           Control.Monad.Trans.Select
+import           Control.Monad.Extra
 import           Data.Maybe            (maybeToList, fromMaybe, mapMaybe)
 import           Data.Foldable         (traverse_)
 import           Data.Bool             (bool)
+import           Data.List             ((\\))
 import           System.FilePath.Posix ((</>), takeDirectory)
-import           System.Directory      (removeDirectoryRecursive, removeFile, createDirectoryIfMissing, listDirectory, doesDirectoryExist)
+import           System.Directory      (removeDirectoryRecursive, removeFile, removeDirectory,
+                                        createDirectoryIfMissing, listDirectory, doesPathExist, doesDirectoryExist)
 import           System.Process.Typed  (runProcess_, readProcess_, shell)
 import           System.IO.Error       (isDoesNotExistError)
 import           Text.Regex            (mkRegex, matchRegex)
@@ -88,6 +93,12 @@ showDiff bk1 bk2 = LC.putStr . fst =<< readProcess_ (shell $ "diff -q -r " ++ pa
 addFiles :: (BackupDir a, BackupDir b)  => a -> b -> IO ()
 addFiles tgt src = createDirectoryIfMissing False (path tgt)
                     >> runProcess_ (shell $ "shopt -s dotglob && cp -fal " ++ (path src </> "*") ++ " " ++ path tgt)
+
+applyFileList :: (BackupDir a) => a -> IO ()
+applyFileList bk = do
+    currentFileList <- lines . LC.unpack . fst <$> readProcess_ (shell $ "cd " ++ path bk ++ "&& find .")
+    desiredFileList <- lines <$> readFile (path bk </> "file_list")
+    traverse_ (\p -> let fp = path bk </> p in whenM (doesPathExist fp) $ ifM (doesDirectoryExist fp) (removeDirectory fp) (removeFile fp)) $ reverse (currentFileList \\ desiredFileList)
 
 makeHash :: BackupDir a => a -> IO ()
 makeHash bk = createDirectoryIfMissing False (takeDirectory $ checksumPath bk)
