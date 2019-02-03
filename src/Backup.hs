@@ -189,5 +189,5 @@ remoteDiffs = mapMaybe parseDiff <$> remoteArchives
 diffBetween ::  (Backup b, Backup c) => b -> c -> IO Diff
 diffBetween from to = let diff = Diff (day from) (day to)
                       in createDirectoryIfMissing False (takeDirectory $ path diff)
-                         >> runProcess_ (shell $ "rsync -ra --exclude-from=upload-exclude --compare-dest=" ++ path from ++ " " ++ path to ++ " " ++ path diff)
+                         >> runProcess_ (shell $ "rsync -ra --exclude-from=upload-exclude --compare-dest=" ++ path from ++ "/ " ++ path to ++ "/ " ++ path diff ++ "/")
                          >> return diff
