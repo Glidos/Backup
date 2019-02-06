@@ -98,10 +98,10 @@ levelToUpdate today = do
     fromJust <$> findM (fmap not . levelOkay) [2..]
 
 showFileShort :: (Integral i, Show i) => String -> i -> String
-showFileShort path size = show (quot size (1024 * 1024)) ++ " " ++ path
+showFileShort path size = unwords [show (quot size (1024 * 1024)), path]
 
 showFileLong :: String -> FileStatus -> String
-showFileLong path fstat = show (fileSize fstat) ++ formatTime defaultTimeLocale "%Y-%m-%d %H:%M:%S" (epochTimeToUTCTime $ modificationTime fstat) ++ path
+showFileLong path fstat = unwords [show (fileSize fstat), formatTime defaultTimeLocale "%Y-%m-%d %H:%M:%S" (epochTimeToUTCTime $ modificationTime fstat), path]
 
 -- Report the overall space used by a directory and enumerate files over 8MB
 report :: String -> IO ()
