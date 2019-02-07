@@ -5,12 +5,14 @@ module Util
 , partialM
 , returnFromJust
 , fromSingleton
+, setMinus
 ) where
 
-import Data.Bool
-import Data.Convertible
-import Data.Time.Clock
-import System.Posix.Types
+import Data.Bool          (bool)
+import Data.Convertible   (convert)
+import Data.Time.Clock    (UTCTime)
+import Data.List          (sort)
+import System.Posix.Types (EpochTime)
 
 
 epochTimeToUTCTime :: EpochTime -> UTCTime
@@ -36,3 +38,12 @@ returnFromJust msg = maybe (fail msg) return
 fromSingleton :: [a] -> Maybe a
 fromSingleton [v] = Just v
 fromSingleton _   = Nothing
+
+-- Order n Log n set minus
+setMinus :: Ord a => [a] -> [a] -> [a]
+setMinus xs ys = minus (sort xs) (sort ys) where minus [] _ = []
+                                                 minus xs [] = xs
+                                                 minus (x:xs) (y:ys) = case compare x y of LT -> x:minus xs (y:ys)
+                                                                                           EQ -> minus xs (y:ys)
+                                                                                           GT -> minus (x:xs) ys
+

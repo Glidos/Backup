@@ -41,6 +41,7 @@ import           Network.HTTP.Simple   (parseRequest, httpBS, getResponseBody)
 
 import           Host                  (httpHost, httpDir, remoteUser, remoteHost, remoteDir)
 import qualified SFTP
+import           Util                  (setMinus)
 
 baseDir = "/home/backup"
 
@@ -98,7 +99,7 @@ applyFileList :: (BackupDir a) => a -> IO ()
 applyFileList bk = do
     currentFileList <- lines . LC.unpack . fst <$> readProcess_ (shell $ "cd " ++ path bk ++ "&& find .")
     desiredFileList <- lines <$> readFile (path bk </> "file_list")
-    traverse_ (\p -> let fp = path bk </> p in whenM (doesPathExist fp) $ ifM (doesDirectoryExist fp) (removeDirectory fp) (removeFile fp)) $ reverse (currentFileList \\ desiredFileList)
+    traverse_ (\p -> let fp = path bk </> p in whenM (doesPathExist fp) $ ifM (doesDirectoryExist fp) (removeDirectory fp) (removeFile fp)) $ reverse (currentFileList `setMinus` desiredFileList)
 
 makeHash :: BackupDir a => a -> IO ()
 makeHash bk = createDirectoryIfMissing False (takeDirectory $ checksumPath bk)
