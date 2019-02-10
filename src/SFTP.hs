@@ -1,7 +1,7 @@
 module SFTP
     ( SFTP,
     withSFTP,
-    withSFTPE,
+    withSFTP_,
     listDirectory,
     upload,
     download,
@@ -27,11 +27,15 @@ import Util (dropFromEnd)
 -- delimiters.
 type SFTP = ExceptT String (StateT (Handle, [[String]]) IO)
 
-withSFTP :: String -> SFTP a -> IO a
-withSFTP url commands =  withSFTPE url commands >>= either fail return
+-- Start an SFTP session and run the speified commands, returning the
+-- result of the commands, with errors reported via IO exceptions.
+withSFTP_ :: String -> SFTP a -> IO a
+withSFTP_ url commands =  withSFTP url commands >>= either fail return
 
-withSFTPE :: String -> SFTP a -> IO (Either String a)
-withSFTPE url commands =
+-- Start an SFTP session and run the specified commands, returning the
+-- result of the commanda, wrapped as an Either to report error strings.
+withSFTP :: String -> SFTP a -> IO (Either String a)
+withSFTP url commands =
     let config = setStdin createPipe
                $ setStdout createPipe
                $ setStderr closed

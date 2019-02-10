@@ -106,10 +106,10 @@ makeHash bk = createDirectoryIfMissing False (takeDirectory $ checksumPath bk)
                 >> (writeFile (checksumPath bk) . head . words . LC.unpack . fst =<< readProcess_ (shell $ "md5sum " ++ archivePath bk))
 
 upload :: BackupDir a => a -> IO ()
-upload bk = SFTP.withSFTP (remoteUser ++ "@" ++ remoteHost) $ SFTP.upload (archivePath bk) (remoteDir </> archiveName bk)
+upload bk = SFTP.withSFTP_ (remoteUser ++ "@" ++ remoteHost) $ SFTP.upload (archivePath bk) (remoteDir </> archiveName bk)
 
 downloadL :: BackupDir a => [a] -> IO ()
-downloadL bks = SFTP.withSFTP (remoteUser ++ "@" ++ remoteHost) $ traverse_ (\bk -> SFTP.download (remoteDir </> archiveName bk) $ archivePath bk) bks
+downloadL bks = SFTP.withSFTP_ (remoteUser ++ "@" ++ remoteHost) $ traverse_ (\bk -> SFTP.download (remoteDir </> archiveName bk) $ archivePath bk) bks
 
 removeRemotes :: BackupDir a => [a] -> IO ()
 removeRemotes remotes = SFTP.withSFTP (remoteUser ++ "@" ++ remoteHost)
@@ -120,7 +120,7 @@ parseArchive :: String -> Maybe String
 parseArchive = fmap head . matchRegex (mkRegex "^(.*)\\.tar\\.gpg$")
 
 remoteArchives :: IO [String]
-remoteArchives = SFTP.withSFTP (remoteUser ++ "@" ++ remoteHost) $
+remoteArchives = SFTP.withSFTP_ (remoteUser ++ "@" ++ remoteHost) $
     mapMaybe parseArchive <$> SFTP.listDirectory remoteDir
 
 localArchives :: IO [String]
