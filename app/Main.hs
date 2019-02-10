@@ -12,6 +12,7 @@ import Control.Monad.Extra   (findM, unlessM)
 import System.Posix.Files    (FileStatus, getFileStatus, fileSize, modificationTime)
 import System.Directory.Tree (AnchoredDirTree((:/)), readDirectoryWith)
 import System.Environment    (getArgs, getProgName)
+import System.Process.Typed  (runProcess_, shell)
 import Safe                  (maximumMay)
 
 import Util                  (returnFromJust, dropFromEnd, takeFromEnd, epochTimeToUTCTime, fromSingleton)
@@ -36,6 +37,7 @@ main = do
 
 performDailyTasks :: IO ()
 performDailyTasks = do
+    preBackupTasks
     todaysBackup <- createTodaysBackup
     ensurePeriodicCopiesOf todaysBackup
     removeOldCopies
@@ -52,6 +54,8 @@ performDailyTasks = do
     putStrLn ""
     checkAndTidyRemoteDiffs $ day todaysBackup
 
+preBackupTasks :: IO ()
+preBackupTasks = runProcess_ $ shell "mysqldump --opt --all-databases > /home/public/mysql_backup/mysqldump"
 
 createTodaysBackup :: IO Periodic
 createTodaysBackup = do
