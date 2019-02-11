@@ -59,9 +59,9 @@ preBackupTasks = runProcess_ $ shell "mysqldump --opt --all-databases > /home/pu
 
 createTodaysBackup :: IO Periodic
 createTodaysBackup = do
-    mostRecent <- returnFromJust "no previous backup" . maximumMay =<< backupsForPeriod Daily
+    mostRecent <- maximumMay <$> backupsForPeriod Daily
     today <- utctDay <$> getCurrentTime
-    when (day mostRecent == today) $ fail "backup for today already created"
+    when ((day <$> mostRecent) == Just today) $ fail "backup for today already created"
     createBackupForDayBasedOn today mostRecent
 
 
@@ -174,7 +174,8 @@ newBase :: IO ()
 newBase = do
     (`unless` fail "NewBase not empty") . null =<< backupsInSubdir "NewBase"
     (`unless` fail "Archives not empty") . null =<< localArchivedBackups
-    void . compress =<< createUploadableCopy "NewBase" =<< returnFromJust "No daily backups found" . maximumMay =<< backupsForPeriod Daily
+    -- Use the most recent daily backup of create one if there is no previous one.
+    void . compress =<< createUploadableCopy "NewBase" =<< maybe createTodaysBackup return . maximumMay =<< backupsForPeriod Daily
 
 check :: IO ()
 check = do

@@ -20,7 +20,7 @@ module Backup
 
 import Data.Time.Calendar    (Day)
 import Data.Time.Format      (defaultTimeLocale, formatTime, parseTimeM)
-import Data.Maybe            (mapMaybe)
+import Data.Maybe            (mapMaybe, maybeToList)
 import Data.List             (intercalate)
 import BackupDir             (BackupDir, subDir, wrapperDir, baseDir, path, outerPath, remoteArchives, localArchives)
 import System.Directory      (doesDirectoryExist, createDirectoryIfMissing, listDirectory)
@@ -132,9 +132,10 @@ backupTarget = "/"
 
 -- Create a backup for today based on an exisiting backup
 -- Unchanged files will share disc space with the existing backup
-createBackupForDayBasedOn :: Backup b => Day -> b -> IO Periodic
+createBackupForDayBasedOn :: Backup b => Day -> Maybe b -> IO Periodic
 createBackupForDayBasedOn day previous = let backup = Periodic Daily day
-                                         in runProcess_ (shell $ intercalate "&&" ["rsync -ra --files-from=rsync-list --exclude-from=backup-exclude --link-dest=" ++ path previous ++ " " ++ backupTarget ++ " " ++ path backup,
+                                             link_arg = ("--link-dest=" ++) . path <$> previous
+                                         in runProcess_ (shell $ intercalate "&&" [unwords $ ["rsync -ra --files-from=rsync-list --exclude-from=backup-exclude"] ++ maybeToList link_arg ++ [backupTarget, path backup],
                                                                                    "cd " ++ path backup,
                                                                                    "find . > file_list"])
                                             >> return backup
