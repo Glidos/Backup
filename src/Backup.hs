@@ -27,7 +27,7 @@ import System.Directory      (doesDirectoryExist, createDirectoryIfMissing, list
 import System.FilePath.Posix ((</>), takeDirectory, takeFileName)
 import System.Process.Typed  (runProcess_, shell)
 import Control.Monad         ((<=<))
-import Text.Regex            (mkRegex, matchRegex)
+import Text.Regex            (Regex, mkRegex, matchRegex)
 
 import Util                  (returnFromJust, partialM, fromSingleton)
 
@@ -91,14 +91,20 @@ dayFormatString Weekly = "%Y-Week%W"
 dayFormatString Monthly = "%Y-%m"
 dayFormatString Yearly = "%Y"
 
+dayRegex :: Frequency -> Regex
+dayRegex Daily = mkRegex "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+dayRegex Weekly = mkRegex "^[0-9]{4}-Week[0-9]{2}$"
+dayRegex Monthly = mkRegex "^[0-9]{4}-[0-9]{2}$"
+dayRegex Yearly = mkRegex "^[0-9]{4}$"
+
 formatDay :: Frequency -> Day -> String
 formatDay freq = formatTime defaultTimeLocale (dayFormatString freq)
 
-parseDay :: Frequency -> String -> Maybe Day
-parseDay freq = parseTimeM True defaultTimeLocale (dayFormatString freq)
+parseDaily :: String -> Maybe Day
+parseDaily = parseTimeM True defaultTimeLocale (dayFormatString Daily)
 
 testParseDay :: Frequency -> String -> Bool
-testParseDay freq = (/= Nothing) . parseDay freq
+testParseDay freq = (/= Nothing) . matchRegex (dayRegex freq)
 
 formatLevel :: Integer -> String
 formatLevel level = "Level" ++ show level
@@ -109,7 +115,7 @@ formatLevel level = "Level" ++ show level
 -- single subdirectory named according to the day. (Multiple subdirectories would be a sign
 -- of something having gone wrong).
 dayForPath :: Bool -> String -> IO Day
-dayForPath useSubdir path = returnFromJust ("Corrupt backup: " ++ path) . (parseDay Daily =<<) =<< (if useSubdir then fromSingleton <$> listDirectory path else return $ Just $ takeFileName path)
+dayForPath useSubdir path = returnFromJust ("Corrupt backup: " ++ path) . (parseDaily =<<) =<< (if useSubdir then fromSingleton <$> listDirectory path else return $ Just $ takeFileName path)
 
 -- List the current periodic backups for a specific frequency
 --
@@ -126,7 +132,7 @@ backupForLevel level = traverse ((Incremental level <$>) . dayForPath True) =<< 
 -- Return the backups for a specified special sub directory
 backupsInSubdir :: String -> IO [Special]
 backupsInSubdir subdir = createDirectoryIfMissing False (baseDir </> subdir)
-                         >> fmap (Special subdir) . mapMaybe (parseDay Daily) <$> listDirectory (baseDir </> subdir)
+                         >> fmap (Special subdir) . mapMaybe (parseDaily) <$> listDirectory (baseDir </> subdir)
 
 backupTarget = "/"
 
@@ -172,10 +178,10 @@ periodIsRepresented :: Backup b => Frequency -> b -> IO Bool
 periodIsRepresented freq base = doesDirectoryExist $ outerPath $ Periodic freq $ day base
 
 parseDiff :: String -> Maybe Diff
-parseDiff = fmap (\[a,b] -> Diff a b) . traverse (parseDay Daily) <=< matchRegex (mkRegex "^(.*)to(.*)$")
+parseDiff = fmap (\[a,b] -> Diff a b) . traverse (parseDaily) <=< matchRegex (mkRegex "^(.*)to(.*)$")
 
 parseSpecial :: String -> String -> Maybe Special
-parseSpecial name = fmap (Special name) . parseDay Daily
+parseSpecial name = fmap (Special name) . parseDaily
 
 localArchivedBackups :: IO [Special]
 localArchivedBackups = mapMaybe (parseSpecial "Staged") <$> localArchives
