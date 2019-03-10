@@ -1,3 +1,6 @@
+{-# LANGUAGE
+  LambdaCase
+#-}
 module Main where
 
 import Data.List             (sort, sortOn, nub, (\\))
@@ -7,6 +10,7 @@ import Data.Time.Calendar    (Day, addDays, addGregorianMonthsRollOver)
 import Data.Time.Format      (defaultTimeLocale, formatTime)
 import Data.Foldable         (traverse_)
 import Data.Maybe            (fromJust)
+import Control.Arrow         ((>>>))
 import Control.Monad         ((<=<), unless, when, void, filterM)
 import Control.Monad.Extra   (findM, unlessM)
 import System.Posix.Files    (FileStatus, getFileStatus, fileSize, modificationTime)
@@ -14,11 +18,14 @@ import System.Directory.Tree (AnchoredDirTree((:/)), readDirectoryWith)
 import System.Environment    (getArgs, getProgName)
 import System.Process.Typed  (runProcess_, shell)
 import Safe                  (maximumMay)
+import Text.Printf           (printf)
 
 import Util                  (returnFromJust, dropFromEnd, takeFromEnd, epochTimeToUTCTime, fromSingleton)
-import Backup                (Frequency(Daily, Weekly, Monthly, Yearly), Backup, Periodic, Special(Special), Diff, toDay, fromDay,
-                              day, backupForLevel, backupsForPeriod, backupsInSubdir, createIncrementalCopy, createPeriodicCopy,
-                              createUploadableCopy, createBackupForDayBasedOn, periodIsRepresented, diffBetween, remoteDiffs, localArchivedBackups)
+import Backup                (Frequency(Daily, Weekly, Monthly, Yearly), Backup, Periodic, Special(Special),
+                              Diff, toDay, fromDay, day, backupForLevel, backupsForPeriod, backupsInSubdir,
+                              createIncrementalCopy, createPeriodicCopy, createUploadableCopy,
+                              createBackupForDayBasedOn, periodIsRepresented, diffBetween, remoteDiffs,
+                              localArchivedBackups)
 import BackupDir             (BackupDir, remove, removeArchive, path, remoteOkay, compress, decompress, showDiff, 
                               addFiles, applyFileList, makeHash, upload, downloadL, removeRemotes)
 import Infer                 (inferredDay, inferences, daysConstructableFrom)
@@ -42,7 +49,7 @@ performDailyTasks = do
     ensurePeriodicCopiesOf todaysBackup
     removeOldCopies
     level <- levelToUpdate $ day todaysBackup
-    putStrLn $ "Level " ++ show level ++ " missing, not constructable or out of date"
+    putStrLn $ printf "Level %d missing, not constructable or out of date" level
     traverse_ (traverse remove <=< backupForLevel) [level..maxLevelStored]
     unless (level > maxLevelStored) $ void $ createIncrementalCopy level todaysBackup
     previous <- returnFromJust "previous level mysteriously disappeared" =<< backupForLevel (level - 1)
@@ -50,7 +57,8 @@ performDailyTasks = do
     report $ path diff
     compressAndUploadDiff diff
     remove diff
-    putStrLn . (++) ("Level " ++ show level ++ " backup complete ") . formatTime defaultTimeLocale "%H:%M:%S" =<< getCurrentTime
+    timeString <- formatTime defaultTimeLocale "%H:%M:%S" <$> getCurrentTime
+    putStrLn $ printf "Level %d backup complete %s" level timeString 
     putStrLn ""
     checkAndTidyRemoteDiffs $ day todaysBackup
 
@@ -98,14 +106,18 @@ levelToUpdate today = do
     level1 <- returnFromJust "Level 1 backup missing" =<< backupForLevel 1
     days <- daysConstructableFrom (day level1) <$> (filterM remoteOkay =<< remoteDiffs)
     let dayOkayForLevel level d = elem d days && addLifetimeForLevel level d > today
-    let levelOkay level = maybe False (dayOkayForLevel level . day) <$> backupForLevel level
+    let levelOkay level = (\case Just bk -> dayOkayForLevel level (day bk)
+                                 Nothing -> False)    <$> backupForLevel level
     fromJust <$> findM (fmap not . levelOkay) [2..]
 
 showFileShort :: (Integral i, Show i) => String -> i -> String
 showFileShort path size = unwords [show (quot size (1024 * 1024)), path]
 
 showFileLong :: String -> FileStatus -> String
-showFileLong path fstat = unwords [show (fileSize fstat), formatTime defaultTimeLocale "%Y-%m-%d %H:%M:%S" (epochTimeToUTCTime $ modificationTime fstat), path]
+showFileLong path fstat
+    = unwords [show (fileSize fstat),
+               formatTime defaultTimeLocale "%Y-%m-%d %H:%M:%S" (epochTimeToUTCTime $ modificationTime fstat),
+               path]
 
 -- Report the overall space used by a directory and enumerate files over 8MB
 report :: String -> IO ()
@@ -122,7 +134,7 @@ compressAndUploadDiff diff = do
     archivePath <- compress diff
     putStrLn . showFileShort archivePath =<< fileSize <$> getFileStatus archivePath
     makeHash diff
-    putStrLn . ("Starting upload " ++) . formatTime defaultTimeLocale "%H:%M:%S" =<< getCurrentTime
+    putStrLn . printf "Starting upload %s" . formatTime defaultTimeLocale "%H:%M:%S" =<< getCurrentTime
     upload diff
     removeArchive diff
 
@@ -158,7 +170,7 @@ restore = do
     let genDiffs = maximumOn (inferredDay $ day seed) $ inferences (day seed) diffs
     traverse_ decompress genDiffs
     let staging = Special "Staged" $ inferredDay (day seed) genDiffs
-    putStrLn $ "Most recent generatable backup: " ++ show staging
+    putStrLn $ printf "Most recent generatable backup: %s" (show staging)
     unless (staging == seed) $ do
         -- Generate the backup for the target day by first copying the seed files and then
         -- each of the diffs
@@ -175,7 +187,11 @@ newBase = do
     (`unless` fail "NewBase not empty") . null =<< backupsInSubdir "NewBase"
     (`unless` fail "Archives not empty") . null =<< localArchivedBackups
     -- Use the most recent daily backup of create one if there is no previous one.
-    void . compress =<< createUploadableCopy "NewBase" =<< maybe createTodaysBackup return . maximumMay =<< backupsForPeriod Daily
+    backupsForPeriod Daily
+        >>= (maximumMay >>> (\case Just bk -> return bk
+                                   Nothing -> createTodaysBackup))
+        >>= createUploadableCopy "NewBase"
+        >>= void . compress
 
 check :: IO ()
 check = do

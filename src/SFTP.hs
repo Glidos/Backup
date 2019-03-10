@@ -1,19 +1,20 @@
 module SFTP
-    ( SFTP,
-    withSFTP,
-    withSFTP_,
-    listDirectory,
-    upload,
-    download,
-    deleteFile
-    ) where
+( SFTP
+, withSFTP
+, withSFTP_
+, listDirectory
+, upload
+, download
+, deleteFile
+) where
 
 import System.Exit                      (ExitCode(ExitSuccess, ExitFailure))
 import System.IO                        (Handle, hPutStrLn, hFlush, hClose, hGetContents)
-import System.Process.Typed             (Process, getStdin, getStdout, setStdin, setStdout, setStderr, closed, createPipe, shell, withProcess, waitExitCode)
+import System.Process.Typed             (Process, getStdin, getStdout, setStdin, setStdout, setStderr,
+                                         closed, createPipe, shell, withProcess, waitExitCode)
 import Data.List                        (isInfixOf, isPrefixOf)
 import Data.List.Split                  (splitWhen)
-import Control.Conditional              (select)
+import Control.Conditional              (ifM)
 import Control.Monad.Trans.Class        (lift)
 import Control.Monad.Trans.Except       (ExceptT, runExceptT, throwE)
 import Control.Monad.Trans.State.Strict (StateT, evalStateT, get, state)
@@ -90,5 +91,5 @@ runCommand cmd test value =
     getCmdHandle >>= \h -> liftIO (hPutStrLn h cmd)
                             >> liftIO (hFlush h)
                             >> consumeReply
-                            >>= select test (return . value) (throwE . dropFromEnd 2 . last)
+                            >>= ifM test (return . value) (throwE . dropFromEnd 2 . last)
 

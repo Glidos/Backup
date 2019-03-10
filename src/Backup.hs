@@ -1,3 +1,9 @@
+{-# LANGUAGE
+  DataKinds
+, TypeOperators
+, OverloadedLabels
+#-}
+
 module Backup
 ( Frequency(..)
 , Periodic(..)
@@ -22,7 +28,10 @@ import Data.Time.Calendar    (Day)
 import Data.Time.Format      (defaultTimeLocale, formatTime, parseTimeM)
 import Data.Maybe            (mapMaybe, maybeToList)
 import Data.List             (intercalate)
-import BackupDir             (BackupDir, subDir, wrapperDir, baseDir, path, outerPath, remoteArchives, localArchives)
+import Data.Function         ((&))
+import BackupDir             (BackupDir, subDir, wrapperDir, baseDir, path, outerPath,
+                              remoteArchives, localArchives, generateFileList)
+import Named                 (NamedF(Arg, ArgF), (:!), (:?), (!), defaults, paramF)
 import System.Directory      (doesDirectoryExist, createDirectoryIfMissing, listDirectory)
 import System.FilePath.Posix ((</>), takeDirectory, takeFileName)
 import System.Process.Typed  (runProcess_, shell)
@@ -115,7 +124,9 @@ formatLevel level = "Level" ++ show level
 -- single subdirectory named according to the day. (Multiple subdirectories would be a sign
 -- of something having gone wrong).
 dayForPath :: Bool -> String -> IO Day
-dayForPath useSubdir path = returnFromJust ("Corrupt backup: " ++ path) . (parseDaily =<<) =<< (if useSubdir then fromSingleton <$> listDirectory path else return $ Just $ takeFileName path)
+dayForPath useSubdir path = returnFromJust ("Corrupt backup: " ++ path) . (parseDaily =<<)
+                                =<< (if useSubdir then fromSingleton <$> listDirectory path
+                                                  else return $ Just $ takeFileName path)
 
 -- List the current periodic backups for a specific frequency
 --
@@ -123,27 +134,50 @@ dayForPath useSubdir path = returnFromJust ("Corrupt backup: " ++ path) . (parse
 -- the day from the directory name, otherwise look inside for a single directory from
 -- which to derive the day.
 backupsForPeriod :: Frequency -> IO [Periodic]
-backupsForPeriod freq = traverse ((Periodic freq <$>) . dayForPath (freq /= Daily) . (baseDir </>)) . filter (testParseDay freq) =<< listDirectory baseDir
+backupsForPeriod freq = traverse ((Periodic freq <$>) . dayForPath (freq /= Daily) . (baseDir </>))
+                            . filter (testParseDay freq) =<< listDirectory baseDir
 
 -- Return the current Incremental backkup for a level if present
 backupForLevel :: Integer -> IO (Maybe Incremental)
-backupForLevel level = traverse ((Incremental level <$>) . dayForPath True) =<< partialM doesDirectoryExist (baseDir </> formatLevel level)
+backupForLevel level = traverse ((Incremental level <$>) . dayForPath True)
+                            =<< partialM doesDirectoryExist (baseDir </> formatLevel level)
 
 -- Return the backups for a specified special sub directory
 backupsInSubdir :: String -> IO [Special]
 backupsInSubdir subdir = createDirectoryIfMissing False (baseDir </> subdir)
-                         >> fmap (Special subdir) . mapMaybe (parseDaily) <$> listDirectory (baseDir </> subdir)
+                         >> fmap (Special subdir) . mapMaybe parseDaily <$> listDirectory (baseDir </> subdir)
 
-backupTarget = "/"
+backupSource = "" -- Root directory
+
+rsync :: "filesFrom"   :? String ->
+         "excludeFrom" :? String ->
+         "linkDest"    :? String ->
+         "compareDest" :? String ->
+         "sourcePath"  :! String ->
+         "targetPath"  :! String -> IO ()
+rsync (ArgF filesFrom)
+      (ArgF excludeFrom)
+      (ArgF linkDest)
+      (ArgF compareDest)
+      (Arg sourcePath)
+      (Arg targetPath) = runProcess_ $ shell $ unwords $ "rsync -ra" : maybeToList (("--files-from=" ++) <$> filesFrom)
+                                                                    ++ maybeToList (("--exclude-from=" ++ ) <$> excludeFrom)
+                                                                    ++ maybeToList (("--link-dest=" ++) <$> linkDest)
+                                                                    ++ maybeToList (("--compare-dest=" ++) <$> compareDest)
+                                                                    ++ [sourcePath ++ "/"]
+                                                                    ++ [targetPath]
 
 -- Create a backup for today based on an exisiting backup
 -- Unchanged files will share disc space with the existing backup
 createBackupForDayBasedOn :: Backup b => Day -> Maybe b -> IO Periodic
 createBackupForDayBasedOn day previous = let backup = Periodic Daily day
-                                             link_arg = ("--link-dest=" ++) . path <$> previous
-                                         in runProcess_ (shell $ intercalate "&&" [unwords $ ["rsync -ra --files-from=rsync-list --exclude-from=backup-exclude"] ++ maybeToList link_arg ++ [backupTarget, path backup],
-                                                                                   "cd " ++ path backup,
-                                                                                   "find . > file_list"])
+                                         in rsync ! #filesFrom "rsync-list"
+                                                  ! #excludeFrom "backup-exclude"
+                                                  ! paramF #linkDest (path <$> previous)
+                                                  ! #sourcePath backupSource
+                                                  ! #targetPath (path backup)
+                                                  ! defaults
+                                            >> generateFileList backup
                                             >> return backup
 
 -- Perform copy between backups, sharing disc space
@@ -154,7 +188,11 @@ createCopy base backup = createDirectoryIfMissing False (outerPath backup)
 -- Perform copy between backups, restricting to just the files for upload
 createRestrictedCopy :: (Backup b, Backup c) => b -> c -> IO ()
 createRestrictedCopy base backup = createDirectoryIfMissing False (outerPath backup)
-                                    >> runProcess_ (shell $ "rsync -ra --exclude-from=upload-exclude --link-dest=" ++ path base ++ "/ " ++ path base ++ "/ " ++ path backup ++ "/")
+                                    >> rsync ! #excludeFrom "upload-exclude"
+                                             ! #linkDest (path base)
+                                             ! #sourcePath (path base)
+                                             ! #targetPath (path backup)
+                                             ! defaults
 
 
 -- For a given frequency, create a periodic copy of an existing backup,
@@ -178,7 +216,7 @@ periodIsRepresented :: Backup b => Frequency -> b -> IO Bool
 periodIsRepresented freq base = doesDirectoryExist $ outerPath $ Periodic freq $ day base
 
 parseDiff :: String -> Maybe Diff
-parseDiff = fmap (\[a,b] -> Diff a b) . traverse (parseDaily) <=< matchRegex (mkRegex "^(.*)to(.*)$")
+parseDiff = fmap (\[a,b] -> Diff a b) . traverse parseDaily <=< matchRegex (mkRegex "^(.*)to(.*)$")
 
 parseSpecial :: String -> String -> Maybe Special
 parseSpecial name = fmap (Special name) . parseDaily
@@ -196,5 +234,9 @@ remoteDiffs = mapMaybe parseDiff <$> remoteArchives
 diffBetween ::  (Backup b, Backup c) => b -> c -> IO Diff
 diffBetween from to = let diff = Diff (day from) (day to)
                       in createDirectoryIfMissing False (takeDirectory $ path diff)
-                         >> runProcess_ (shell $ "rsync -ra --exclude-from=upload-exclude --compare-dest=" ++ path from ++ "/ " ++ path to ++ "/ " ++ path diff ++ "/")
+                         >> rsync ! #excludeFrom "upload-exclude"
+                                  ! #compareDest (path from)
+                                  ! #sourcePath (path to)
+                                  ! #targetPath (path diff)
+                                  ! defaults
                          >> return diff
