@@ -22,13 +22,13 @@ import Text.Printf           (printf)
 
 import Util                  (returnFromJust, dropFromEnd, takeFromEnd, epochTimeToUTCTime, fromSingleton)
 import Backup                (Frequency(Daily, Weekly, Monthly, Yearly), Backup, Periodic, Special(Special),
-                              Diff, toDay, fromDay, day, backupForLevel, backupsForPeriod, backupsInSubdir,
+                              Diff(Diff), toDay, fromDay, day, backupForLevel, backupsForPeriod, backupsInSubdir,
                               createIncrementalCopy, createPeriodicCopy, createUploadableCopy,
                               createBackupForDayBasedOn, periodIsRepresented, diffBetween, remoteDiffs,
                               localArchivedBackups)
 import BackupDir             (BackupDir, remove, removeArchive, path, remoteOkay, compress, decompress, showDiff, 
                               addFiles, applyFileList, makeHash, upload, downloadL, removeRemotes)
-import Infer                 (inferredDay, inferences, daysConstructableFrom)
+import Infer                 (inferences, steps)
 
 main :: IO ()
 main = do
@@ -104,7 +104,8 @@ addLifetimeForLevel 4 = addDays 1
 levelToUpdate :: Day -> IO Integer
 levelToUpdate today = do
     level1 <- returnFromJust "Level 1 backup missing" =<< backupForLevel 1
-    days <- daysConstructableFrom (day level1) <$> (filterM remoteOkay =<< remoteDiffs)
+    okayDiffs <- (filterM remoteOkay =<< remoteDiffs)
+    let days = head <$> inferences (day level1) [(f,t) | Diff f t <- okayDiffs]
     let dayOkayForLevel level d = elem d days && addLifetimeForLevel level d > today
     let levelOkay level = (\case Just bk -> dayOkayForLevel level (day bk)
                                  Nothing -> False)    <$> backupForLevel level
@@ -144,12 +145,12 @@ checkAndTidyRemoteDiffs today = do
     level1 <- returnFromJust "Level 1 backup missing" =<< backupForLevel 1
     allDiffs <- remoteDiffs
     -- generate the inferences for the 2 most recent inferable backups
-    let infs = takeFromEnd 2 $ sortOn (inferredDay $ day level1) $ inferences (day level1) allDiffs
-    let days = map (inferredDay $ day level1) infs
+    let infs = takeFromEnd 2 $ sortOn head $ inferences (day level1) [(f,t) | Diff f t <- allDiffs]
+    let days = map head infs
     unless (today `elem` days) $ fail "Cannot generate todays backup"
     putStrLn $ unwords $ "Most recent backup days:" : map show days
     putStrLn $ "Level 1: " ++ show level1
-    let requiredDiffs = nub $ concat infs
+    let requiredDiffs = nub $ [Diff f t | (f,t) <- concat $ steps <$> infs]
     requiredDiffsOkay <- traverse remoteOkay requiredDiffs
     let reportDiff diff okay = show diff ++ " " ++ if okay then "ok" else "corrupt"
     putStr $ unlines $ "Keeping files:" : zipWith reportDiff requiredDiffs requiredDiffsOkay
@@ -167,9 +168,10 @@ restore = do
     putStrLn $ unwords $ "Downloading diffs:" : map show diffs
     downloadL diffs
     putStrLn "Diffs downloaded"
-    let genDiffs = maximumOn (inferredDay $ day seed) $ inferences (day seed) diffs
+    let inference = maximumOn head $ inferences (day seed) [(f,t) | Diff f t <- diffs]
+    let genDiffs = [Diff f t | (f,t) <- steps inference]
     traverse_ decompress genDiffs
-    let staging = Special "Staged" $ inferredDay (day seed) genDiffs
+    let staging = Special "Staged" $ head inference
     putStrLn $ printf "Most recent generatable backup: %s" (show staging)
     unless (staging == seed) $ do
         -- Generate the backup for the target day by first copying the seed files and then
